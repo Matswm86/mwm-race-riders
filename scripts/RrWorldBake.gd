@@ -1,25 +1,28 @@
 class_name RrWorldBake
 extends RefCounted
 
-## Pre-built static ground and prop transforms per world (the tablet would
-## spend seconds in RrWorldGen at every launch). tests/bake_world.gd writes
-## them; RrWorld uses a bake only when VERSION matches, else it builds at
-## runtime. Bump VERSION with every change to RrWorldGen or a world's track.
+## Pre-built static ground and prop transforms per base track (the tablet
+## would spend seconds in RrWorldGen at every launch). tests/bake_world.gd
+## writes them; RrWorld uses a bake only when VERSION matches, else it builds
+## at runtime. Pro tracks reuse their base track's bake, mirrored in X.
+## Bump VERSION with every change to RrWorldGen or a track's data.
 
-const VERSION: int = 10
-const PATH := "res://assets/generated/world%d.res"
-
-
-static func path_for(world_id: int) -> String:
-	return PATH % world_id
+const VERSION: int = 11
+const PATH := "res://assets/generated/%s.res"
 
 
-static func bake(world_id: int) -> Error:
+## Bake file of a track key (Pro keys share the base track's file).
+static func path_for(key: String) -> String:
+	return PATH % RrTracks.base_key(key)
+
+
+static func bake(key: String) -> Error:
+	var base: String = RrTracks.base_key(key)
 	var gen := RrWorldGen.new()
-	gen.build(RrTrack.new(world_id))
+	gen.build(RrTrack.new(base))
 	var res := Resource.new()
 	res.set_meta(&"version", VERSION)
 	res.set_meta(&"world", gen.result())
-	var path: String = path_for(world_id)
+	var path: String = path_for(base)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	return ResourceSaver.save(res, path, ResourceSaver.FLAG_COMPRESS)

@@ -45,6 +45,8 @@ var _hay_xf: Array[Transform3D] = []
 var _weeds: MultiMeshInstance3D
 var _veg: Array = []
 var _casters: Array[GeometryInstance3D] = []
+## Parent of the baked ground and props; mirrored in X on Pro tracks.
+var _static_root: Node3D
 var _near_trees: Array[MultiMeshInstance3D] = []
 var _cast_t: float = 0.0
 
@@ -101,7 +103,7 @@ func _build_environment() -> void:
 	_sky = Sky.new()
 	var pm := PanoramaSkyMaterial.new()
 	pm.panorama = load(String(look["sky"]))
-	pm.energy_multiplier = 1.0
+	pm.energy_multiplier = float(look.get("sky_energy", 1.0))
 	_sky.sky_material = pm
 	_sky.radiance_size = Sky.RADIANCE_SIZE_256
 	_sky.process_mode = Sky.PROCESS_MODE_AUTOMATIC
@@ -209,7 +211,7 @@ func _lane_material() -> ShaderMaterial:
 func _build_static() -> void:
 	var t0: int = Time.get_ticks_msec()
 	var data: Dictionary = {}
-	var path: String = RrWorldBake.path_for(track.world_id)
+	var path: String = RrWorldBake.path_for(track.key)
 	if ResourceLoader.exists(path):
 		var baked: Resource = load(path)
 		if baked != null and int(baked.get_meta(&"version", -1)) == RrWorldBake.VERSION:
@@ -217,8 +219,14 @@ func _build_static() -> void:
 			world_baked = true
 	if data.is_empty():
 		var gen := RrWorldGen.new()
-		gen.build(track)
+		gen.build(RrTrack.new(RrTracks.base_key(track.key)) if track.mirrored else track)
 		data = gen.result()
+	# A Pro track is its base track mirrored (x -> -x): the base world in X.
+	_static_root = Node3D.new()
+	_static_root.name = "Static"
+	if track.mirrored:
+		_static_root.scale = Vector3(-1.0, 1.0, 1.0)
+	add_child(_static_root)
 	_terrain_mat = _terrain_material()
 	# The far grid sits 60 m+ away under the fog: no normal maps, no patches.
 	_terrain_far_mat = _terrain_mat.duplicate()
@@ -229,7 +237,7 @@ func _build_static() -> void:
 		mi.mesh = e[0]
 		mi.material_override = _terrain_far_mat if e.size() > 3 and bool(e[3]) else _terrain_mat
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mi)
+		_static_root.add_child(mi)
 	_lane_mat = _lane_material()
 	for e: Array in data["lanes"]:
 		var ml := MeshInstance3D.new()
@@ -237,7 +245,7 @@ func _build_static() -> void:
 		ml.material_override = _lane_mat
 		ml.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		ml.visibility_range_end = 420.0
-		add_child(ml)
+		_static_root.add_child(ml)
 	for e: Array in data["water"]:
 		var mw := MeshInstance3D.new()
 		mw.mesh = e[0]
@@ -252,7 +260,7 @@ func _build_static() -> void:
 		wm.uv1_scale = Vector3(0.08, 0.08, 0.08)
 		mw.material_override = wm
 		mw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mw)
+		_static_root.add_child(mw)
 	var protos: Dictionary = {}
 	for e: Array in data["props"]:
 		var kind: String = e[0]
@@ -276,7 +284,7 @@ func _build_static() -> void:
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mmi.visibility_range_end_margin = 10.0
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-		add_child(mmi)
+		_static_root.add_child(mmi)
 		_veg.append([kind, mmi])
 		if kind.begins_with("near_"):
 			_near_trees.append(mmi)
@@ -293,7 +301,7 @@ func _build_static() -> void:
 			cmi.material_override = mat
 			cmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			cmi.visibility_range_begin = 45.0
-			add_child(cmi)
+			_static_root.add_child(cmi)
 			_veg.append(["card_" + kind, cmi])
 		elif model.begins_with("rock") or model in ["dead_trunk", "fence_rail"]:
 			_casters.append(mmi)
@@ -601,7 +609,7 @@ func apply_features(f: Dictionary) -> void:
 
 ## Cost-probe hook: show or hide one group of the scene.
 func debug_show(group: String, on: bool) -> void:
-	for c: Node in get_children():
+	for c: Node in get_children() + _static_root.get_children():
 		var g: String = ""
 		var mo: Material = (c as MeshInstance3D).material_override if c is MeshInstance3D else null
 		if mo != null and (mo == _terrain_mat or mo == _terrain_far_mat):
