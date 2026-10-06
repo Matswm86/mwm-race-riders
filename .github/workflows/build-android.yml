@@ -137,10 +137,16 @@ jobs:
           echo "--- export templates dir ---"
           ls -la "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/" || true
 
-      - name: Export Android debug APK
+      - name: Export Android release APK (both ABIs, signed with the CI keystore)
+        env:
+          # Release template (no debug symbols, smaller engine libraries), signed
+          # with the same keystore the debug builds used, so sideloading is unchanged.
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH: ${{ github.workspace }}/debug.keystore
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: android
         run: |
           set -e
-          ./godot --headless --verbose --export-debug "Android" "${EXPORT_NAME}.apk" 2>&1 | tee export.log
+          ./godot --headless --verbose --export-release "Android" "${EXPORT_NAME}.apk" 2>&1 | tee export.log
           ls -la "${EXPORT_NAME}.apk"
 
       - name: Upload APK as workflow artifact
@@ -159,7 +165,7 @@ jobs:
           prerelease: true
           body: |
             Auto-built APK from latest `main` commit (${{ github.sha }}).
-            Sideload only — debug-signed, not for distribution.
+            Sideload only: release build signed with a CI-made keystore, not for store distribution.
 
             **Install on phone:** download `${{ env.EXPORT_NAME }}.apk`, open it,
             allow "Install from this source" if Android prompts. If reinstalling
@@ -174,6 +180,6 @@ jobs:
           name: ${{ github.ref_name }}
           body: |
             Release ${{ github.ref_name }}.
-            Sideload only — debug-signed, not for distribution.
+            Sideload only: release build signed with a CI-made keystore, not for store distribution.
           files: ${{ env.EXPORT_NAME }}.apk
           fail_on_unmatched_files: true

@@ -7,7 +7,8 @@ the .import files up front (DESIGN 12, import settings):
 
 - every albedo / ORM / emission / terrain map: VRAM compressed, mipmaps on
 - every normal map: VRAM compressed, normal-map mode on, mipmaps on
-- HDRIs: VRAM uncompressed (half float), no mipmaps
+- HDRIs: VRAM uncompressed (half float), no mipmaps; the game loads the 1K
+  .exr copies (the 2K .hdr sources stay out of the export)
 - 2D UI textures (assets/textures/ui): lossless, no mipmaps
 - every GLB: textures discarded on import (the game builds its materials from the
   loose files in assets/textures, so each texture ships once), LODs on
@@ -31,7 +32,7 @@ SCENE_HEAD = '[remap]\n\nimporter="scene"\nimporter_version=1\ntype="PackedScene
 def tex_params(p: Path) -> str:
     name = p.stem.lower()
     rel = p.relative_to(ROOT).as_posix()
-    if p.suffix.lower() == ".hdr":
+    if p.suffix.lower() in (".hdr", ".exr"):
         return "compress/mode=3\nmipmaps/generate=false\ncompress/hdr_compression=0\ndetect_3d/compress_to=0\n"
     if rel.startswith("assets/textures/ui/"):
         return "compress/mode=0\nmipmaps/generate=false\nprocess/fix_alpha_border=true\ndetect_3d/compress_to=0\n"
@@ -75,7 +76,7 @@ def main() -> None:
     force = "--force" in sys.argv
     n = 0
     for p in sorted((ROOT / "assets/textures").rglob("*")):
-        if p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".hdr"):
+        if p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".hdr", ".exr"):
             continue
         imp = p.with_name(p.name + ".import")
         if imp.exists() and not force:
