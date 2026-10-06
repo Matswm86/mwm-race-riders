@@ -167,6 +167,13 @@ static func draw_icon(
 				]
 			)
 			ci.draw_polyline(pts, col, s * 0.22, true)
+		"board":
+			# Podium: three blocks, the middle one tallest, a star above it.
+			ci.draw_rect(Rect2(c + Vector2(-0.85, 0.05) * s, Vector2(0.52, 0.65) * s), col)
+			ci.draw_rect(Rect2(c + Vector2(-0.27, -0.3) * s, Vector2(0.54, 1.0) * s), col)
+			ci.draw_rect(Rect2(c + Vector2(0.33, 0.25) * s, Vector2(0.52, 0.45) * s), col)
+			var st := RrDisc.star_points(c + Vector2(0, -0.62) * s, s * 0.26, s * 0.11)
+			ci.draw_colored_polygon(st, col)
 		"close":
 			ci.draw_line(c + Vector2(-0.5, -0.5) * s, c + Vector2(0.5, 0.5) * s, col, s * 0.2, true)
 			ci.draw_line(c + Vector2(0.5, -0.5) * s, c + Vector2(-0.5, 0.5) * s, col, s * 0.2, true)
