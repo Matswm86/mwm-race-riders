@@ -1,0 +1,183 @@
+class_name RrBalance
+extends RefCounted
+## All MWM Race Riders tunables. Source: docs/GDD.md. Sim: tools/pack_sim.py.
+
+# Race and track 1
+const TRACK1_LENGTH_M: float = 950.0
+const RUNOUT_M: float = 60.0
+const RIDER_COUNT: int = 6  # player + 5 AI (owner)
+const AI_START_GAP_M: float = 3.0  # AI at s 3, 6, 9, 12, 15; player at 0
+const AI_LANE_OFFSETS: Array[float] = [-3.0, 3.0, -1.5, 1.5, 0.0]
+
+# Speed
+const CRUISE_MPS: float = 20.0
+const ACCEL_UP: float = 7.0  # m/s^2
+const ACCEL_DOWN: float = 12.0
+const MIN_SPEED_FRAC: float = 0.6  # never below 12 m/s after GO
+const STEEP_MULT: float = 1.05  # Bratthenget section
+const HOVER_SMOOTH_MULT: float = 1.06
+const RUNOUT_MULT: float = 0.5
+
+# Steering
+const STEER_LAT_MAX: float = 5.0  # m/s
+const HOVER_STEER_MULT: float = 1.10
+const STEER_EASE_S: float = 0.12
+const STEER_RELEASE_S: float = 0.15
+const AIR_STEER_FRAC: float = 0.5
+const LEAN_MAX_DEG: float = 18.0
+const RIDER_RADIUS: float = 0.5
+const RAIL_MULT_L: float = 0.97
+const RAIL_MULT_V: float = 0.92
+const PALM_IGNORE_S: float = 8.0
+
+# Lett assist
+const ASSIST_LAT_MAX: float = 2.5  # m/s toward the kid line
+const ASSIST_EASE_S: float = 0.3
+const ASSIST_RESUME_S: float = 0.6
+const AUTO_BOOST_S_L: float = 2.0  # Lett only; Vanlig = manual
+
+# Pads
+const PAD_W_M: float = 3.0
+const PAD_L_M: float = 4.0
+const PAD_MULT: Array[float] = [1.25, 1.32, 1.40]
+const PAD_TIME_S: float = 1.2
+const PAD_CHAIN_WINDOW_S: float = 1.5
+
+# Boost
+const BOOST_FIRST_S: float = 10.0
+const BOOST_REFILL_S: float = 10.0
+const BOOST_TIME_S: float = 2.5
+const BOOST_MULT: float = 1.40
+
+# Jumps
+const GRAVITY: float = 22.0  # m/s^2, game gravity
+const KICKER_AIR_S: Array[float] = [1.0, 1.2, 1.6, 1.0]  # K1-K4, track 1
+const TRICK_MIN_AIR_S: float = 0.8
+const TRICK_TIME_S: float = 0.6
+const LAND_BONUS_MIN_AIR_S: float = 1.2
+const LAND_BONUS_MULT: float = 1.10
+const LAND_BONUS_TIME_S: float = 0.8
+
+# Bumps and obstacles
+const BUMP_DX_M: float = 1.0
+const BUMP_DS_M: float = 1.4
+const BUMP_PUSH_MPS: float = 3.0
+const BUMP_PUSH_S: float = 0.2
+const BUMP_TIME_S: float = 0.5
+const BUMP_MULT_PLAYER: float = 0.95
+const BUMP_MULT_AI: float = 0.90
+const BUMP_PAIR_COOLDOWN_S: float = 1.0
+const HAY_MULT: float = 0.85
+const HAY_TIME_S: float = 0.5
+
+# Swap gates
+const SWAP_FX_S: float = 0.3
+const FIRST_SWAP_TIMESCALE: float = 0.5
+const FIRST_SWAP_SLOWMO_S: float = 0.6
+
+# AI
+const AI_SKILL_L: Array[float] = [0.93, 0.95, 0.97, 0.99, 1.01]
+const AI_SKILL_V: Array[float] = [0.90, 0.92, 0.94, 0.96, 0.98]
+const AI_PAD_SEEK_L: Array[float] = [0.20, 0.25, 0.30, 0.35, 0.40]
+const AI_PAD_SEEK_V: Array[float] = [0.30, 0.35, 0.40, 0.45, 0.50]
+const AI_PAD_LOOKAHEAD_M: float = 30.0
+const AI_HAY_AVOID: float = 0.8
+const AI_HAY_LOOKAHEAD_M: float = 25.0
+const AI_TRAFFIC_AVOID: float = 0.7
+const AI_LAT_MAX: float = 4.0
+const AI_LAT_EASE_S: float = 0.2
+const AI_BOOST_DELAY_S: Vector2 = Vector2(0.5, 3.0)
+const AI_MULT_CLAMP: Vector2 = Vector2(0.80, 1.50)
+const RB_RANGE_M: float = 30.0
+const RB_AHEAD_L: float = 0.08
+const RB_BEHIND_L: float = 0.04
+const RB_FADE_FROM_L: float = 1.1  # never fades
+const RB_AHEAD_V: float = 0.05
+const RB_BEHIND_V: float = 0.03
+const RB_FADE_FROM_V: float = 0.40
+const RB_FADE_SPAN: float = 0.10
+
+# Start, finish, flow
+const AUTO_START_S: float = 4.0
+const AUTO_START_FIRST_S: float = 3.0
+const START_LIGHTS_S: float = 1.2
+const FINISH_SHOT_S: float = 2.0
+const FINISH_SLOWMO: float = 0.6
+const FINISH_SLOWMO_S: float = 0.4
+const AI_FINISH_WAIT_S: float = 4.0
+const CARD_FADE_S: float = 0.25
+const HOLDOVER_S: float = 0.3
+const GUARD_WINDOW_S: Vector2 = Vector2(0.3, 2.0)  # gear and home two-tap guard
+const IDLE_HINT_S: float = 7.0
+
+# Camera
+const CAM_OFFSET: Vector3 = Vector3(0.0, 2.8, 4.8)  # DESIGN 6a (supersedes 2.2 / 4.5)
+const CAM_PITCH_DEG: float = -14.0  # DESIGN 6a
+const CAM_FOV: float = 70.0
+const CAM_FOV_BOOST: float = 80.0
+const CAM_FOV_IN_S: float = 0.15
+const CAM_FOV_OUT_S: float = 0.4
+const CAM_FOLLOW_POS: float = 8.0
+const CAM_FOLLOW_YAW: float = 6.0
+const CAM_FOLLOW_HEIGHT: float = 4.0
+const SPEED_LINES_FROM: float = 1.1  # x cruise
+const SPEED_LINES_ALPHA_MAX: float = 0.25
+
+# Feel
+const LAND_SQUASH: Vector2 = Vector2(1.10, 0.80)  # xz, y
+const LAND_SQUASH_IN_S: float = 0.08
+const LAND_SQUASH_OUT_S: float = 0.18
+const WOBBLE_DEG: float = 12.0
+const WOBBLE_HZ: float = 3.0
+const HOVER_HEIGHT_M: float = 0.3
+const HOVER_BOB_M: float = 0.05
+const HOVER_BOB_HZ: float = 1.5
+const MAX_FLASHES_PER_S: int = 3
+
+# Ghost
+const GHOST_HZ: int = 10
+const GHOST_ALPHA: float = 0.4
+const GHOST_DEFAULT_ON: bool = true
+
+# Unlocks (total finishes)
+const UNLOCK_HOVER: int = 1
+const UNLOCK_TRACKS: Array[int] = [0, 3, 6, 9, 12, 15]  # finishes needed for track 1..6
+const FREE_TRACKS: int = 1
+const FREE_CARD_FROM_FINISH: int = 3
+
+# Audio
+const SFX_VOL_DEFAULT: int = 80
+const MUSIC_VOL_DEFAULT: int = 60
+const MUSIC_UNDER_SFX_DB: float = -6.0
+const FINISH_DUCK_DB: float = -4.0
+
+# Builder additions (godot-android-dev): layout and look numbers from DESIGN.md
+const DESIGN_W: float = 1080.0
+const DESIGN_H: float = 1920.0
+const HOME_HIT: float = 216.0  # home disc and gear hit squares
+const TOP_ROW_CLEAR: float = 36.0  # safe-area slack before the top row moves
+const WRIST_Y: float = 1664.0  # touches starting below this are ignored
+const BOOST_CENTER_Y_FROM_BOTTOM: float = 430.0  # GDD 3.1: centre (540, 1490) at 1920
+const BOOST_DRAW_R: float = 110.0
+const BOOST_HIT_R: float = 140.0
+const CAM_FAR: float = 450.0
+const FOG_BEGIN: float = 55.0
+const FOG_END: float = 260.0
+const CAM_FOV_LESS_MOTION: float = 73.0
+const LAND_SHAKE_PX: float = 6.0
+const LAND_SHAKE_S: float = 0.12
+const PLACE_POP_MIN_S: float = 0.5  # at most one medal change shown per 0.5 s
+const AI_TRAFFIC_LOOK_M: float = 3.0
+const AI_TRAFFIC_DX_M: float = 1.2
+const AI_TRAFFIC_SHIFT_M: float = 1.5
+const AI_HAY_SHIFT_M: float = 2.0
+const ASSIST_GAIN: float = 2.0  # m/s of assist per metre off the kid line
+const AI_LINE_GAIN: float = 3.0
+const RUNOUT_STOP_M: float = 55.0  # riders come to rest this far past the line
+const BALE_RESPAWN_S: float = 1.5
+const KICKER_LIP_M: float = 1.15  # ramp.glb lip height
+const KICKER_LEN_M: float = 3.65  # ramp.glb deck length
+const SWAP_HOP_M: float = 0.3
+const STEER_ARROW_S: float = 0.08
+const HINT_LOOP_S: float = 1.6
+const IDLE_HINT_SHOW_S: float = 2.0
