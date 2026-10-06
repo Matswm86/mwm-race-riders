@@ -58,6 +58,9 @@ var _fov_t: float = 99.0
 var _boost_end_t: float = 99.0
 var _dip_t: float = 99.0
 var _shake_t: float = 99.0
+var _rumble_t: float = 0.0
+var _fov_base: float = RrBalance.CAM_FOV
+var _boost_blend: float = 0.0
 var _intro_from: Transform3D
 var _finish_from: Transform3D
 var _rng := RandomNumberGenerator.new()
@@ -132,7 +135,7 @@ func _build_environment() -> void:
 	sun.light_color = look["sun_color"]
 	sun.light_energy = float(look["sun_energy"])
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-	sun.directional_shadow_max_distance = 60.0
+	sun.directional_shadow_max_distance = 40.0
 	sun.directional_shadow_split_1 = 0.22
 	sun.shadow_bias = 0.04
 	sun.shadow_normal_bias = 1.0
@@ -195,6 +198,8 @@ func _lane_material() -> ShaderMaterial:
 	else:
 		base = "res://assets/textures/world1/terrain_gravel_floor_02"
 		m.set_shader_parameter("tile", 2.5)
+		# QA look 5: the pale gravel read as snow; tint it to a used road.
+		m.set_shader_parameter("tint", Vector3(0.58, 0.55, 0.5))
 	m.set_shader_parameter("alb", load(base + "_albedo.jpg"))
 	m.set_shader_parameter("nrm", load(base + "_normal.jpg"))
 	m.set_shader_parameter("arm", load(base + "_arm.jpg"))
@@ -251,7 +256,9 @@ func _build_static() -> void:
 	var protos: Dictionary = {}
 	for e: Array in data["props"]:
 		var kind: String = e[0]
-		var model: String = kind.trim_prefix("near_").trim_prefix("far_").trim_prefix("srock_")
+		var model: String = (
+			kind.trim_prefix("st_").trim_prefix("near_").trim_prefix("far_").trim_prefix("srock_")
+		)
 		if not protos.has(model):
 			protos[model] = glb_mesh(model)
 		var buf: PackedFloat32Array = e[1]
@@ -263,7 +270,7 @@ func _build_static() -> void:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		var mat: Material = RrMats.for_mesh(mm.mesh)
-		if kind.begins_with("srock_"):
+		if kind.begins_with("srock_") or kind.begins_with("st_srock_"):
 			mat = sandstone(mat as StandardMaterial3D)
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -273,9 +280,35 @@ func _build_static() -> void:
 		_veg.append([kind, mmi])
 		if kind.begins_with("near_"):
 			_near_trees.append(mmi)
+			# QA perf fix 3: beyond 45 m the same pines draw as one card each.
+			if not protos.has("card_" + model):
+				protos["card_" + model] = _one_card(protos[model])
+			var cm := MultiMesh.new()
+			cm.transform_format = MultiMesh.TRANSFORM_3D
+			cm.mesh = protos["card_" + model]
+			cm.instance_count = mm.instance_count
+			cm.buffer = buf
+			var cmi := MultiMeshInstance3D.new()
+			cmi.multimesh = cm
+			cmi.material_override = mat
+			cmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			cmi.visibility_range_begin = 45.0
+			add_child(cmi)
+			_veg.append(["card_" + kind, cmi])
 		elif model.begins_with("rock") or model in ["dead_trunk", "fence_rail"]:
 			_casters.append(mmi)
 	world_ms = Time.get_ticks_msec() - t0
+
+
+## The first plane (two triangles) of a four-plane pine impostor.
+func _one_card(mesh: Mesh) -> Mesh:
+	var arr: Array = mesh.surface_get_arrays(0)
+	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+	arr[Mesh.ARRAY_INDEX] = idx.slice(0, 6)
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	m.surface_set_material(0, mesh.surface_get_material(0))
+	return m
 
 
 ## DESIGN 10: the grey rock scans multiplied to sandstone.
@@ -353,7 +386,10 @@ func _build_kit() -> void:
 	# Speed pads: one MultiMesh, flare per pad in the custom data.
 	var pad_xf: Array[Transform3D] = []
 	for pad: Array in track.pads:
-		pad_xf.append(_slope_frame(float(pad[0]), float(pad[1]), 0.02))
+		# GDD 4.4: 6 m long plates at 30 m/s (the model is 3 x 4 m).
+		var pxf: Transform3D = _slope_frame(float(pad[0]), float(pad[1]), 0.02)
+		pxf.basis = pxf.basis.scaled(Vector3(1.0, 1.0, RrBalance.PAD_L_M / 4.0))
+		pad_xf.append(pxf)
 	_pad_mat = _glow_material("boost_pad", true)
 	_pads = multi(self, glb_mesh("boost_pad"), pad_xf, _pad_mat, true)
 	_pad_flare.resize(track.pads.size())
@@ -527,8 +563,16 @@ func apply_features(f: Dictionary) -> void:
 		var kind: String = e[0]
 		var mmi: MultiMeshInstance3D = e[1]
 		var end: float = 0.0
-		if kind.begins_with("near_"):
-			end = 170.0 if far else 120.0
+		if kind.begins_with("st_"):
+			end = RrBalance.PROP_CULL_M  # GDD 11.1 streamers, both tiers
+		elif kind.begins_with("near_"):
+			# Lav: single cards only (half the tree draws and overdraw).
+			end = 45.0
+			mmi.visibility_range_end_margin = 4.0
+			mmi.visible = far
+		elif kind.begins_with("card_"):
+			end = 80.0 if far else 70.0
+			mmi.visibility_range_begin = 45.0 if far else 0.0
 		elif kind.begins_with("far_"):
 			end = 260.0 if far else 0.0
 			mmi.visible = far
@@ -540,9 +584,9 @@ func apply_features(f: Dictionary) -> void:
 		elif kind == "tape_stake" or kind == "fence_rail":
 			end = 160.0
 		elif kind == "bush_desert" or kind.begins_with("rock") or kind.begins_with("srock"):
-			end = 120.0 if not kind.begins_with("srock_rock_a") else 260.0
-			if kind.begins_with("srock_") and not kind == "srock_rock_c":
-				end = 320.0 if far else 200.0
+			end = 120.0
+			if kind.begins_with("srock_") and kind != "srock_rock_c":
+				end = 320.0 if far else 110.0
 		elif kind == "dead_trunk":
 			end = 150.0
 		mmi.visibility_range_end = end
@@ -713,23 +757,18 @@ func _update_casters(race: RrRace, dt: float) -> void:
 	_cast_t -= dt
 	if _cast_t > 0.0:
 		return
-	_cast_t = 0.25
+	_cast_t = 0.1
 	var on: bool = features.get("shadows", false)
 	var p: Vector3 = track.center(race.player.s)
-	for mmi: MultiMeshInstance3D in _near_trees:
-		var c: Vector3 = mmi.multimesh.get_aabb().get_center()
-		var near: bool = on and c.distance_to(p) < 90.0
-		mmi.cast_shadow = (
-			GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-			if near
-			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		)
-	# Racers: only the ones near the player cast (the shadow pass is the
-	# biggest triangle cost, DESIGN 12); rivals drop to coarser LODs sooner.
+	# Only the player and rivals close to it cast (QA perf fix 1); rivals
+	# more than 9 m from the camera ride the low-poly twins (fix 2).
+	var cam: Vector3 = camera.global_position
 	for i: int in views.size():
 		var r: RrRider = race.riders[i]
-		views[i].set_shadow(on and absf(r.s - race.player.s) < 30.0)
-		views[i].set_lod_bias(1.0 if i == 0 else 0.35)
+		views[i].set_shadow(on and (i == 0 or absf(r.s - race.player.s) < 12.0))
+		# Lav: rivals always ride the low-poly twins.
+		var hi_m: float = 7.0 if features.get("normals", false) else 0.0
+		views[i].set_detail(i == 0 or views[i].global_position.distance_to(cam) < hi_m)
 
 
 # ---------------------------------------------------------------- camera
@@ -753,13 +792,19 @@ func reset_camera(race: RrRace) -> void:
 	_cam_h = 0.0
 	_cam_mode = "intro"
 	_cam_t = 0.0
+	# QA finding 8: start from a rear 3/4 view, so the swing into the chase
+	# view keeps the rider in frame (the front view swung past empty hillside).
 	var head: Vector3 = track.world_point(p.s, p.x, 1.2)
 	var fwd: Vector3 = RrTrack.forward_flat(_cam_yaw)
 	var rt: Vector3 = RrTrack.right_of(_cam_yaw)
-	var eye: Vector3 = head + fwd * 4.6 + rt * 2.6 + Vector3.UP * 0.6
+	var eye: Vector3 = head - fwd * 3.4 + rt * 3.2 + Vector3.UP * 0.9
 	_intro_from = Transform3D(Basis(), eye).looking_at(head, Vector3.UP)
 	camera.global_transform = _intro_from
 	camera.fov = RrBalance.CAM_FOV
+	_fov_base = RrBalance.CAM_FOV
+	_boost_blend = 0.0
+	_fov_t = 99.0
+	_boost_end_t = 99.0
 
 
 ## Hold the front 3/4 view, then ease into the chase view (GDD 10.2).
@@ -809,7 +854,7 @@ func _update_camera(race: RrRace, dt: float) -> void:
 		"finish":
 			# Low beside the course just before the arch, looking at the rider
 			# as they ride through it (GDD 10.3).
-			var fs: float = track.length - 16.0
+			var fs: float = track.length - 24.0
 			var hw: float = track.width(fs) * 0.5
 			var eye: Vector3 = track.world_point(fs, -(hw + 3.0), 1.6)
 			var arch: Vector3 = track.world_point(track.length, 0.0, 2.6)
@@ -828,25 +873,50 @@ func _update_camera(race: RrRace, dt: float) -> void:
 				_dip_t += dt
 				xf.origin.y -= 0.08 * sin(_dip_t / 0.15 * PI)
 			camera.global_transform = xf
-	# Boost FOV kick (GDD 11).
-	var fov_hi: float = RrBalance.CAM_FOV_LESS_MOTION if less_motion else RrBalance.CAM_FOV_BOOST
-	if _boost_end_t < 99.0:
-		_boost_end_t += dt
-		var k3: float = clampf(_boost_end_t / RrBalance.CAM_FOV_OUT_S, 0.0, 1.0)
-		camera.fov = lerpf(fov_hi, RrBalance.CAM_FOV, k3)
-		if k3 >= 1.0:
-			_boost_end_t = 99.0
-	elif _fov_t < 99.0:
-		_fov_t += dt
-		var k4: float = clampf(_fov_t / RrBalance.CAM_FOV_IN_S, 0.0, 1.0)
-		camera.fov = lerpf(RrBalance.CAM_FOV, fov_hi, 1.0 - (1.0 - k4) * (1.0 - k4))
+	_update_fov(race, dt)
+	# Landing shake, else the ground rumble (GDD 11.1): dirt, sand and planks
+	# only, never on the hoverboard or the smooth sections.
+	var rumble: float = 0.0
+	var on_ground: bool = not p.airborne and p.vehicle == RrRider.BIKE and not p.finished
+	if on_ground and not track.is_smooth(p.s) and not less_motion and _cam_mode == "chase":
+		rumble = minf(RrBalance.RUMBLE_M * p.v / RrBalance.CRUISE_MPS, RrBalance.RUMBLE_MAX_M)
+	_rumble_t += dt
 	if _shake_t < RrBalance.LAND_SHAKE_S:
 		_shake_t += dt
 		camera.v_offset = _rng.randf_range(-0.03, 0.03)
 		camera.h_offset = _rng.randf_range(-0.03, 0.03)
+	elif rumble > 0.0:
+		var ph: float = _rumble_t * TAU * RrBalance.RUMBLE_HZ
+		camera.v_offset = rumble * sin(ph) * (0.6 + 0.4 * sin(ph * 0.37))
+		camera.h_offset = rumble * 0.5 * sin(ph * 0.71 + 1.3)
 	else:
 		camera.v_offset = 0.0
 		camera.h_offset = 0.0
+
+
+## GDD 11.1 FOV: 70 standing, 75 at cruise, +8 on boost (in 0.15 s, out
+## 0.4 s), smoothed 0.25 s. Less motion: fixed 72.
+func _update_fov(race: RrRace, dt: float) -> void:
+	if less_motion:
+		camera.fov = RrBalance.CAM_FOV_LESS_MOTION
+		return
+	var p: RrRider = race.player
+	var k: float = clampf(p.v / RrBalance.CRUISE_MPS, 0.0, 1.0)
+	var base: float = lerpf(RrBalance.CAM_FOV, RrBalance.CAM_FOV_CRUISE, k)
+	_fov_base = lerpf(_fov_base, base, 1.0 - exp(-dt / 0.25))
+	if _boost_end_t < 99.0:
+		_boost_end_t += dt
+		_boost_blend = 1.0 - clampf(_boost_end_t / RrBalance.CAM_FOV_OUT_S, 0.0, 1.0)
+		if _boost_blend <= 0.0:
+			_boost_end_t = 99.0
+			_fov_t = 99.0
+	elif _fov_t < 99.0:
+		_fov_t = minf(_fov_t + dt, 50.0)
+		var k4: float = clampf(_fov_t / RrBalance.CAM_FOV_IN_S, 0.0, 1.0)
+		_boost_blend = 1.0 - (1.0 - k4) * (1.0 - k4)
+	if _cam_mode == "finish":
+		_boost_blend = move_toward(_boost_blend, 0.0, dt / RrBalance.CAM_FOV_OUT_S)
+	camera.fov = _fov_base + RrBalance.CAM_FOV_BOOST_ADD * _boost_blend
 
 
 # ---------------------------------------------------------------- effects

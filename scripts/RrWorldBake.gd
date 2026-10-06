@@ -6,7 +6,7 @@ extends RefCounted
 ## them; RrWorld uses a bake only when VERSION matches, else it builds at
 ## runtime. Bump VERSION with every change to RrWorldGen or a world's track.
 
-const VERSION: int = 8
+const VERSION: int = 10
 const PATH := "res://assets/generated/world%d.res"
 
 

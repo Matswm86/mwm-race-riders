@@ -8,6 +8,7 @@ Deterministic: every random layer has a fixed seed.
 
 Usage:
     python3 tools/render_sfx.py --kenney <dir holding kenney_impact-sounds> [--out assets/sfx]
+    python3 tools/render_sfx.py --only-synth      (just the wind loops, no samples needed)
 """
 
 from __future__ import annotations
@@ -438,6 +439,34 @@ def roll_loop() -> np.ndarray:
     return x
 
 
+def wind_loop() -> np.ndarray:
+    """Speed wind (GDD 11.1): broadband rush with slow gusts, seamless 3 s loop.
+    The game raises its level from -30 dB to -12 dB and its pitch 0.8 -> 1.3 with speed."""
+    d = 3.25
+    rush = swept_bp(noise(d, 331), 380.0, 380.0, 0.6)
+    air = bp(noise(d, 333), 900.0, 2600.0) * 0.45
+    gust = (
+        0.7
+        + 0.2 * np.sin(2 * np.pi * (1.0 / 3.25) * tt(d))
+        + 0.1 * np.sin(2 * np.pi * (3.0 / 3.25) * tt(d))
+    )
+    low = lp(noise(d, 335), 140.0) * 0.8
+    x = loop_crossfade(mix((rush * gust, 0.9), (air * gust, 1.0), (low, 1.0)))
+    return x / (np.max(np.abs(x)) + 1e-9) * 10 ** (-12.0 / 20.0)
+
+
+def wind_whistle() -> np.ndarray:
+    """High wind layer above 35 m/s and on boost: narrow airy whistle, seamless 3 s loop."""
+    d = 3.25
+    n = noise(d, 337)
+    a = swept_bp(n, 2300.0, 2300.0, 9.0)
+    b = swept_bp(noise(d, 339), 3400.0, 3400.0, 12.0) * 0.5
+    wob = 0.75 + 0.25 * np.sin(2 * np.pi * (2.0 / 3.25) * tt(d))
+    hiss = hp(noise(d, 341), 5000.0) * 0.12
+    x = loop_crossfade(mix((a * wob, 1.0), (b, 1.0), (hiss, 1.0)))
+    return x / (np.max(np.abs(x)) + 1e-9) * 10 ** (-16.0 / 20.0)
+
+
 def hum_loop() -> np.ndarray:
     """Hoverboard: low smooth hum with a soft airy layer, seamless loop."""
     d = 2.25
@@ -481,7 +510,13 @@ def build(kenney: Path) -> dict[str, np.ndarray]:
     out["click"] = click()
     out["roll_loop"] = roll_loop()
     out["hum_loop"] = hum_loop()
+    out.update(build_synth_only())
     return out
+
+
+def build_synth_only() -> dict[str, np.ndarray]:
+    """Sounds that need no samples (render them alone with --only-synth)."""
+    return {"wind_loop": wind_loop(), "wind_whistle": wind_whistle()}
 
 
 def write_ogg(x: np.ndarray, path: Path, quality: str = "4") -> None:
@@ -497,15 +532,17 @@ def write_ogg(x: np.ndarray, path: Path, quality: str = "4") -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument(
-        "--kenney", type=Path, required=True, help="folder holding kenney_impact-sounds"
-    )
+    ap.add_argument("--kenney", type=Path, help="folder holding kenney_impact-sounds")
+    ap.add_argument("--only-synth", action="store_true", help="render only the sample-free loops")
     ap.add_argument(
         "--out", type=Path, default=Path(__file__).resolve().parent.parent / "assets" / "sfx"
     )
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    for name, x in build(args.kenney).items():
+    if not args.only_synth and args.kenney is None:
+        ap.error("--kenney is required unless --only-synth")
+    sounds = build_synth_only() if args.only_synth else build(args.kenney)
+    for name, x in sounds.items():
         write_ogg(x, args.out / f"rr_{name}.ogg")
         print(
             f"rr_{name}.ogg  {len(x) / SR:.2f} s  peak {20 * np.log10(np.max(np.abs(x)) + 1e-9):.1f} dBFS"

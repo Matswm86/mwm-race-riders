@@ -10,11 +10,12 @@ uniform sampler2D nrm : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform sampler2D arm : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform float tile = 2.5;
 uniform float edge_line = 0.0;
+uniform vec3 tint = vec3(1.0);
 uniform bool use_normals = true;
 
 void fragment() {
 	vec2 uv = UV / tile;
-	vec3 c = texture(alb, uv).rgb;
+	vec3 c = texture(alb, uv).rgb * tint;
 	vec3 a = texture(arm, uv).rgb;
 	if (edge_line > 0.0) {
 		float edge = smoothstep(0.86, 0.875, abs(UV.x) / 5.85) - smoothstep(0.895, 0.91, abs(UV.x) / 5.85);

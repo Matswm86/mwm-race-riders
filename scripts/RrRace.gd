@@ -194,9 +194,11 @@ func _effects(r: RrRider) -> float:
 
 
 func _target_speed(r: RrRider) -> float:
-	var target: float = RrBalance.CRUISE_MPS * track.section_mult(r.s) * _effects(r)
+	var mult: float = track.section_mult(r.s) * _effects(r)
 	if r.vehicle == RrRider.BOARD and track.is_smooth(r.s):
-		target *= RrBalance.HOVER_SMOOTH_MULT
+		mult *= RrBalance.HOVER_SMOOTH_MULT
+	# GDD 4.1: all effects together top out at SPEED_MULT_CAP (48 m/s).
+	var target: float = RrBalance.CRUISE_MPS * minf(mult, RrBalance.SPEED_MULT_CAP)
 	if r.rail:
 		target *= RrBalance.RAIL_MULT_L if easy else RrBalance.RAIL_MULT_V
 	if not r.is_player:

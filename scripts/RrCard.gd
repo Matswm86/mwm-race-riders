@@ -223,9 +223,11 @@ func _draw_reveal() -> void:
 	var spin: float = 1.0
 	if not less_motion:
 		spin = cos(clampf(_reveal_t / 2.0, 0.0, 1.0) * TAU * 2.0)
-	var ped := RrDraw._round_rect(Rect2(c + Vector2(-240, 190), Vector2(480, 100)), 30.0)
-	draw_colored_polygon(ped, Color(0.25, 0.27, 0.30))
-	draw_polyline(ped + PackedVector2Array([ped[0]]), RrDraw.WHITE, 4.0, true)
+	# Soft floor shadow instead of a pedestal (QA finding 7: the grey pill
+	# read as an empty button).
+	draw_set_transform(c + Vector2(0, 250), 0.0, Vector2(1.0, 0.18))
+	draw_circle(Vector2.ZERO, 230.0, Color(0, 0, 0, 0.35))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if kind.begins_with("world:"):
 		var wid: int = int(kind.get_slice(":", 1))
 		var r: float = 230.0 * (1.0 if less_motion else minf(1.0, 0.4 + _reveal_t / 0.6))

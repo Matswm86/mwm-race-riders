@@ -11,9 +11,9 @@ extends RefCounted
 ## and kind (DESIGN 9: MultiMesh per 100 m chunk, visibility ranges).
 
 const SAMPLE_STEP: float = 2.0
-const ROW_STEP: float = 2.0
+const ROW_STEP: float = 3.0
 const STRIP_CHUNK: float = 100.0
-const FAR_STEP: float = 10.0
+const FAR_STEP: float = 12.0
 const FAR_CHUNK: float = 300.0
 const FAR_PAD: float = 420.0
 ## Lateral offsets past the track edge for the strip, per world (m).
@@ -192,15 +192,15 @@ func _height_w1(s: float, lat: float, x: float, z: float) -> float:
 func _wall_at(s: float, left: bool) -> float:
 	var hw: float = track.width(s) * 0.5
 	var w: float = 15.0
-	if s < 60.0:
-		w = lerpf(13.0, 15.0, _sm(0.0, 60.0, s))
-	if s > 214.0 and s < 302.0:
-		w = lerpf(w, hw + 1.6, _sm(214.0, 226.0, s) * (1.0 - _sm(292.0, 302.0, s)))
-	if s >= 620.0 and s < 900.0:
-		w = lerpf(15.0, 19.0, _sm(620.0, 650.0, s))
-	if s >= 900.0:
-		w = lerpf(19.0, 24.0, _sm(900.0, 930.0, s))
-	if s >= 300.0 and s < 620.0 and not left:
+	if s < 90.0:
+		w = lerpf(13.0, 15.0, _sm(0.0, 90.0, s))
+	if s > 321.0 and s < 453.0:
+		w = lerpf(w, hw + 1.6, _sm(321.0, 339.0, s) * (1.0 - _sm(438.0, 453.0, s)))
+	if s >= 930.0 and s < 1350.0:
+		w = lerpf(15.0, 19.0, _sm(930.0, 975.0, s))
+	if s >= 1350.0:
+		w = lerpf(19.0, 24.0, _sm(1350.0, 1395.0, s))
+	if s >= 450.0 and s < 930.0 and not left:
 		w = 14.0
 	return w
 
@@ -226,10 +226,10 @@ func _height_w2(s: float, lat: float, x: float, z: float) -> float:
 	if q > 0.0:
 		var jitter: float = _noise2.get_noise_2d(x * 0.6, z * 0.6) * 1.5
 		h = maxf(h, th + minf(_strata(q * 2.1 + jitter), 48.0 + dune * 4.0))
-	if left and s > 240.0 and s < 650.0:
+	if left and s > 360.0 and s < 975.0:
 		# Old rim highway: the canyon drops away on the left behind a rail.
 		# Long blends at both ends, so no cliff face stands across the view.
-		var k: float = _sm(240.0, 330.0, s) * (1.0 - _sm(596.0, 650.0, s))
+		var k: float = _sm(360.0, 495.0, s) * (1.0 - _sm(894.0, 975.0, s))
 		var drop: float = -_sm(2.5, 16.0, off) * 42.0 + _sm(150.0, 210.0, d) * 60.0
 		var hd: float = th - 0.04 + _sm(0.0, 4.0, off) * 0.25 if d <= hw + 2.5 else th + drop
 		h = lerpf(h, hd + dune * 2.0 * _sm(2.0, 6.0, off), k)
@@ -642,7 +642,7 @@ func _scenery_w1() -> void:
 	# GPU cost (cost probe): every pine is four alpha-tested cards, so the
 	# forest is a dense wall near the trail and thin beyond 40 m; the HDRI
 	# carries the far forest.
-	while n < 1500 and tries < 60000:
+	while n < 2250 and tries < 90000:
 		tries += 1
 		var s: float = _rng.randf_range(-30.0, RrTrack.S_MAX - 6.0)
 		var side: float = -1.0 if _rng.randf() < 0.5 else 1.0
@@ -655,7 +655,7 @@ func _scenery_w1() -> void:
 		p.y -= 0.2
 		var sc: float = _rng.randf_range(0.7, 1.2)
 		var kind: String = kinds[_rng.randi() % 3]
-		var chunk: float = 100.0 if off < 45.0 else 300.0
+		var chunk: float = 40.0 if off < 45.0 else 300.0
 		_put(
 			("near_" if off < 45.0 else "far_") + kind,
 			chunk,
@@ -670,14 +670,14 @@ func _scenery_w2() -> void:
 	# Brush on the wash floor, fallen sandstone blocks at the wall foot.
 	var n: int = 0
 	var tries: int = 0
-	while n < 420 and tries < 9000:
+	while n < 630 and tries < 13000:
 		tries += 1
 		var s: float = _rng.randf_range(-30.0, RrTrack.S_MAX - 6.0)
 		var side: float = -1.0 if _rng.randf() < 0.5 else 1.0
 		var hw: float = track.width(s) * 0.5
 		var wall: float = _wall_at(s, side < 0.0)
 		var lat: float = side * _rng.randf_range(hw + 0.8, maxf(hw + 1.5, wall - 1.0))
-		if side < 0.0 and s > 304.0 and s < 616.0:
+		if side < 0.0 and s > 456.0 and s < 924.0:
 			continue
 		if track.in_gap(s) or not _free_spot(s, lat):
 			continue
@@ -688,11 +688,11 @@ func _scenery_w2() -> void:
 	n = 0
 	tries = 0
 	var rocks: Array[String] = ["rock_a", "rock_b", "rock_c"]
-	while n < 260 and tries < 9000:
+	while n < 390 and tries < 13000:
 		tries += 1
 		var s2: float = _rng.randf_range(-30.0, RrTrack.S_MAX - 6.0)
 		var side2: float = -1.0 if _rng.randf() < 0.5 else 1.0
-		if side2 < 0.0 and s2 > 304.0 and s2 < 616.0:
+		if side2 < 0.0 and s2 > 456.0 and s2 < 924.0:
 			continue
 		if track.in_gap(s2):
 			continue
@@ -709,10 +709,10 @@ func _scenery_w2() -> void:
 		)
 		_put("srock_" + kind2, 150.0, s2, xf)
 		n += 1
-	for k: int in 14:
+	for k: int in 21:
 		var s3: float = _rng.randf_range(20.0, RrTrack.S_MAX - 40.0)
 		var side3: float = -1.0 if _rng.randf() < 0.5 else 1.0
-		if track.in_gap(s3) or side3 < 0.0 and s3 > 304.0 and s3 < 616.0:
+		if track.in_gap(s3) or side3 < 0.0 and s3 > 456.0 and s3 < 924.0:
 			continue
 		var lat3: float = side3 * (track.width(s3) * 0.5 + _rng.randf_range(2.0, 7.0))
 		var p3: Vector3 = ground_at(s3, lat3)
@@ -722,7 +722,8 @@ func _scenery_w2() -> void:
 
 ## Undergrowth, course tape and fences near the trail (DESIGN 9 / 10).
 func _edge_props(w: int) -> void:
-	var s: float = -14.0
+	_streamers(w)
+	var s: float = -21.0
 	while s < RrTrack.S_MAX - 4.0:
 		var hw: float = track.width(s) * 0.5
 		var yaw: float = track.yaw(s)
@@ -776,7 +777,7 @@ func _edge_props(w: int) -> void:
 								Vector3.ONE * _rng.randf_range(0.8, 1.4)
 							)
 						)
-				if _rng.randf() < 0.06:
+				if _rng.randf() < 0.03:
 					var rl: float = side * (hw + _rng.randf_range(1.0, 24.0))
 					if _free_spot(s, rl):
 						var rp: Vector3 = ground_at(s, rl)
@@ -789,7 +790,7 @@ func _edge_props(w: int) -> void:
 							_yaw_xf(rp, _rng.randf() * TAU, Vector3.ONE * rs)
 						)
 			else:
-				if smooth and side < 0.0 and int(s) % 4 == 0 and s > 302.0 and s < 618.0:
+				if smooth and side < 0.0 and int(s) % 4 == 0 and s > 453.0 and s < 927.0:
 					var rp2: Vector3 = ground_at(s + 2.0, side * (hw + 0.6))
 					_put(
 						"fence_rail",
@@ -825,6 +826,38 @@ func _edge_props(w: int) -> void:
 					_yaw_xf(bp, _rng.randf() * TAU, Vector3(bs, bs * 1.5, bs))
 				)
 			t += 3.5
+
+
+## GDD 11.1 roadside streamers: close props 1-3 m off the rail on both sides
+## at random 3-6 m spacing (irregular, so they read as speed and never as a
+## flickering stripe). Cheap meshes only: grass tufts and small stones in
+## world 1, desert brush and stones in world 2. Culled at 150 m (RrWorld).
+func _streamers(w: int) -> void:
+	var sp: Vector2 = RrBalance.PROP_NEAR_SPACING_M
+	for side: float in [-1.0, 1.0]:
+		var s: float = -20.0 + _rng.randf() * sp.y
+		while s < track.length + 60.0:
+			var hw: float = track.width(s) * 0.5
+			var lat: float = side * (hw + 0.6 + _rng.randf_range(1.0, 3.0))
+			var ok: bool = _free_spot(s, lat) and not track.in_gap(s)
+			if w == 2 and side < 0.0 and s > 456.0 and s < 924.0:
+				ok = false  # the rim drop-off: nothing to stand on
+			if ok:
+				var p: Vector3 = ground_at(s, lat)
+				var yaw: float = _rng.randf() * TAU
+				var stone: bool = _rng.randf() < (0.25 if w == 1 else 0.3)
+				if stone:
+					p.y -= 0.08
+					var r: float = _rng.randf_range(0.22, 0.45)
+					var kind: String = "st_rock_c" if w == 1 else "st_srock_rock_c"
+					_put(kind, 100.0, s, _yaw_xf(p, yaw, Vector3(r, r * 0.8, r)))
+				elif w == 1:
+					var g: float = _rng.randf_range(1.4, 2.2)
+					_put("st_grass_card", 100.0, s, _yaw_xf(p, yaw, Vector3(g, g * 1.2, g)))
+				else:
+					var b: float = _rng.randf_range(0.7, 1.2)
+					_put("st_bush_desert", 100.0, s, _yaw_xf(p, yaw, Vector3.ONE * b))
+			s += _rng.randf_range(sp.x, sp.y)
 
 
 ## Everything the bake stores.

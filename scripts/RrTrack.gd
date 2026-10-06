@@ -8,8 +8,8 @@ extends RefCounted
 ## Path3D built from the same points is exposed for the scene (GDD 4). The
 ## numbers live in RrWorlds; this class only answers questions about them.
 
-const S_MIN: float = -40.0
-const S_MAX: float = 1040.0
+const S_MIN: float = -60.0
+const S_MAX: float = 1580.0
 const STEP: float = 1.0
 const HAY_HALF_W: float = 0.8
 

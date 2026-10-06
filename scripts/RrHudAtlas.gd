@@ -18,7 +18,7 @@ const SPRITES: Dictionary = {
 	"place5": [Rect2(600, 300, 150, 154), Vector2(75, 75)],
 	"place6": [Rect2(750, 300, 150, 154), Vector2(75, 75)],
 	"bar": [Rect2(0, 460, 600, 60), Vector2(18, 17)],
-	"flag": [Rect2(610, 460, 48, 64), Vector2(6, 44)],
+	"flag": [Rect2(610, 462, 48, 64), Vector2(6, 58)],
 	"tok0": [Rect2(0, 530, 40, 40), Vector2(20, 20)],
 	"tok1": [Rect2(40, 530, 40, 40), Vector2(20, 20)],
 	"tok2": [Rect2(80, 530, 40, 40), Vector2(20, 20)],

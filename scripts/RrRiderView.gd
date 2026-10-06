@@ -43,6 +43,9 @@ var _pitch: float = 0.0
 var _meshes: Array[MeshInstance3D] = []
 var _ghost_r: RrRider
 var _shadow_on: bool = false
+var _hi: Array[MeshInstance3D] = []
+var _lo: Array[MeshInstance3D] = []
+var _detail_hi: bool = true
 
 
 func build(liv: int, ghost_mat: Material = null) -> void:
@@ -78,6 +81,20 @@ func _instance(path: String, kind: String, ghost_mat: Material) -> Node3D:
 		m.material_override = ghost_mat if ghost_mat != null else RrMats.livery(kind, livery)
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_meshes.append(m)
+		var lod_path: String = "res://assets/generated/%s_lod.res" % kind
+		if ghost_mat == null and kind != "hoverboard" and ResourceLoader.exists(lod_path):
+			# Low-poly twin on the same skeleton and skin (QA perf fix 2).
+			var lo := MeshInstance3D.new()
+			lo.mesh = load(lod_path)
+			lo.skin = m.skin
+			lo.material_override = m.material_override
+			lo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			lo.visible = false
+			m.get_parent().add_child(lo)
+			lo.skeleton = lo.get_path_to(m.get_parent())
+			_meshes.append(lo)
+			_hi.append(m)
+			_lo.append(lo)
 	_lean_node.add_child(n)
 	return n
 
@@ -148,20 +165,37 @@ func set_shadow(on: bool) -> void:
 	if ghost or on == _shadow_on:
 		return
 	_shadow_on = on
-	var cast: int = (
-		GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-		if on
-		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	)
-	for m: MeshInstance3D in _meshes:
-		m.cast_shadow = cast
+	_apply_casts()
 
 
-## Rivals take coarser mesh LODs sooner (DESIGN 12: rivals at LOD1).
-func set_lod_bias(bias: float) -> void:
+## Rivals beyond a few metres use the low-poly twins (skinned meshes do not
+## switch Godot's automatic LODs).
+func set_detail(high: bool) -> void:
+	if high == _detail_hi:
+		return
+	_detail_hi = high
+	_apply_casts()
+
+
+## Shadows always come from the low-poly twins (shadow-only while the full
+## mesh is shown), so the shadow pass costs about a quarter of the triangles.
+func _apply_casts() -> void:
+	var off: int = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for m: MeshInstance3D in _meshes:
-		if m.lod_bias != bias:
-			m.lod_bias = bias
+		if not (m in _hi or m in _lo):
+			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if _shadow_on else off
+	for m: MeshInstance3D in _hi:
+		m.visible = _detail_hi
+		m.cast_shadow = off
+	for m: MeshInstance3D in _lo:
+		m.visible = true
+		if not _shadow_on:
+			m.visible = not _detail_hi
+			m.cast_shadow = off
+		elif _detail_hi:
+			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+		else:
+			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
 func set_vehicle(v: int, instant: bool) -> void:

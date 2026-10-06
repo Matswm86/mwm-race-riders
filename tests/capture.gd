@@ -76,12 +76,21 @@ func _phase_shots() -> void:
 	await _frames(6)
 	print("wrist-strip touch: steer dir %d (expect 0)" % main.steer_dir())
 	_touch(Vector2(200, 1800), false)
-	await _until(func(r: RrRace) -> bool: return r.player.s > 204.0)
+	await _until(func(r: RrRace) -> bool: return r.player.s > 306.0)
 	await _freeze_shot("02_w1_midrace")
 	print(
 		(
 			"W1 mid-race: s %.0f place %d draws %d tris %dk"
 			% [main.race.player.s, main.race.player.place, _draws(), _tris() / 1000]
+		)
+	)
+	# Boost moment (GDD 11.1): FOV 83, speed lines, wind whistle.
+	await _until(func(r: RrRace) -> bool: return r.player.boosting(r.t) and r.player.v > 40.0)
+	await _freeze_shot("02b_w1_boost")
+	print(
+		(
+			"boost: v %.1f m/s fov %.1f s %.0f"
+			% [main.race.player.v, main.world.camera.fov, main.race.player.s]
 		)
 	)
 	# Knock-off: the bot shoulders the next rival it comes up beside.
@@ -114,7 +123,7 @@ func _phase_shots() -> void:
 	main.card.tap_reveal()
 	await _wait_s(0.4)
 	print("race 2: world %d, ghost %s" % [main.world_id, main.ghost != null])
-	await _until(func(r: RrRace) -> bool: return r.player.s > 172.0)
+	await _until(func(r: RrRace) -> bool: return r.player.s > 258.0)
 	await _freeze_shot("08_w2_midrace")
 	print(
 		(
@@ -124,9 +133,9 @@ func _phase_shots() -> void:
 	)
 	await _until(_weed_visible, 30.0, 1.0)
 	await _freeze_shot("09_w2_tumbleweed")
-	await _until(func(r: RrRace) -> bool: return r.player.s > 279.0)
+	await _until(func(r: RrRace) -> bool: return r.player.s > 419.0)
 	await _freeze_shot("10_swap_gate")
-	await _until(func(r: RrRace) -> bool: return r.player.s > 330.0)
+	await _until(func(r: RrRace) -> bool: return r.player.s > 495.0)
 	await _freeze_shot("11_w2_board_highway")
 	print("W2 at s %.0f: vehicle %d (1 = board)" % [main.race.player.s, main.race.player.vehicle])
 	RaceRiders.set_quality_high(false)
@@ -152,7 +161,7 @@ func _phase_shots() -> void:
 	main.page.cards[0].press()
 	await _wait_s(0.3)
 	RaceRiders.set_difficulty(false)
-	await _until(func(r: RrRace) -> bool: return r.player.s > 120.0)
+	await _until(func(r: RrRace) -> bool: return r.player.s > 180.0)
 	await _freeze_shot("15_w1_replay_ghost")
 	print("W1 replay: ghost on %s alpha %.2f" % [main.ghost != null, main.world.ghost_alpha])
 	RaceRiders.set_difficulty(true)
@@ -160,7 +169,7 @@ func _phase_shots() -> void:
 
 func _knock_visible(r: RrRace) -> bool:
 	for o: RrRider in r.riders:
-		if o.fall_t > 0.12 and o.fall_t < 0.6 and absf(o.s - r.player.s) < 6.0:
+		if o.fall_t > 0.1 and o.fall_t < 0.5 and absf(o.s - r.player.s) < 7.0:
 			return true
 	return false
 
@@ -181,7 +190,7 @@ func _weed_visible(r: RrRace) -> bool:
 		if pose.is_empty():
 			continue
 		var ahead: float = float(pose[0]) - r.player.s
-		if ahead > 4.0 and ahead < 11.0 and absf(float(pose[1])) < 3.0:
+		if ahead > 5.0 and ahead < 11.0 and absf(float(pose[1])) < 2.5:
 			return true
 	return false
 
@@ -192,7 +201,7 @@ func _phase_look() -> void:
 	if OS.get_environment("SUN_SWEEP") != "":
 		main.start_race(2)
 		await _wait_s(0.5)
-		await _until(func(r: RrRace) -> bool: return r.player.s > 120.0)
+		await _until(func(r: RrRace) -> bool: return r.player.s > 180.0)
 		Engine.time_scale = 0.0
 		for yaw: float in [0.0, 180.0, 90.0, -90.0]:
 			main.world.sun.rotation_degrees.y = yaw
@@ -203,7 +212,7 @@ func _phase_look() -> void:
 	for w: int in [1, 2]:
 		main.start_race(w)
 		await _wait_s(0.5)
-		await _until(func(r: RrRace) -> bool: return r.player.s > 192.0)
+		await _until(func(r: RrRace) -> bool: return r.player.s > 288.0)
 		Engine.time_scale = 0.0
 		for tm: int in [Environment.TONE_MAPPER_ACES, Environment.TONE_MAPPER_AGX]:
 			main.world.env.tonemap_mode = tm
@@ -220,7 +229,7 @@ func _phase_thumbs() -> void:
 	for w: int in [1, 2]:
 		main.start_race(w)
 		await _wait_s(0.4)
-		await _until(func(r: RrRace) -> bool: return r.player.s > 214.0)
+		await _until(func(r: RrRace) -> bool: return r.player.s > 321.0)
 		Engine.time_scale = 0.0
 		main.hud.visible = false
 		main.home.visible = false
@@ -238,7 +247,7 @@ func _phase_cost() -> void:
 	for w: int in [1, 2]:
 		main.start_race(w)
 		await _wait_s(0.4)
-		await _until(func(r: RrRace) -> bool: return r.player.s > 198.0)
+		await _until(func(r: RrRace) -> bool: return r.player.s > 297.0)
 		Engine.time_scale = 0.0
 		var vp: RID = get_viewport().get_viewport_rid()
 		RenderingServer.viewport_set_measure_render_time(vp, true)

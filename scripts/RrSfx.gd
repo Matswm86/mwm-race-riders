@@ -53,6 +53,9 @@ var _next: int = 0
 var _rng := RandomNumberGenerator.new()
 var _roll: AudioStreamPlayer
 var _hum: AudioStreamPlayer
+var _wind: AudioStreamPlayer
+var _whistle: AudioStreamPlayer
+var _whistle_k: float = 0.0
 var _loop_level: float = 0.0
 
 
@@ -75,6 +78,8 @@ func _ready() -> void:
 		_spread[key] = float(entry[1])
 	_roll = _loop_player("rr_roll_loop")
 	_hum = _loop_player("rr_hum_loop")
+	_wind = _loop_player("rr_wind_loop")
+	_whistle = _loop_player("rr_wind_whistle")
 
 
 func _loop_player(file: String) -> AudioStreamPlayer:
@@ -123,9 +128,36 @@ func set_ride(level: float, speed_k: float, board: bool) -> void:
 	_hum.pitch_scale = clampf(0.8 + 0.35 * speed_k, 0.5, 1.8)
 
 
+## GDD 11.1 wind: -30 dB at a standstill to -12 dB at 45 m/s, pitch 0.8 ->
+## 1.3; a high whistle layer fades in above 35 m/s and on boost. Called
+## every frame with the player's speed (0 = off).
+func set_wind(v: float, boosting: bool) -> void:
+	var k: float = clampf(v / RrBalance.SPEED_LINES_FULL_MPS, 0.0, 1.0)
+	var on: bool = enabled and volume > 0.01 and v > 0.5
+	for p: AudioStreamPlayer in [_wind, _whistle]:
+		if on and not p.playing:
+			p.play()
+		elif not on and p.playing:
+			p.stop()
+	if not on:
+		return
+	var vol: float = linear_to_db(maxf(volume, 0.001))
+	_wind.volume_db = lerpf(RrBalance.WIND_DB.x, RrBalance.WIND_DB.y, k) + vol
+	_wind.pitch_scale = lerpf(RrBalance.WIND_PITCH.x, RrBalance.WIND_PITCH.y, k)
+	var from: float = RrBalance.WIND_WHISTLE_FROM_MPS
+	var w: float = clampf((v - from) / (RrBalance.SPEED_LINES_FULL_MPS - from), 0.0, 1.0)
+	if boosting:
+		w = 1.0
+	_whistle_k = move_toward(_whistle_k, w, 0.02)
+	_whistle.volume_db = linear_to_db(maxf(_whistle_k, 0.001)) + RrBalance.WIND_DB.y - 4.0 + vol
+	_whistle.pitch_scale = lerpf(0.9, 1.2, k)
+
+
 func stop_all() -> void:
 	for p: AudioStreamPlayer in _players:
 		p.stop()
 	_roll.stop()
 	_hum.stop()
+	_wind.stop()
+	_whistle.stop()
 	_loop_level = 0.0

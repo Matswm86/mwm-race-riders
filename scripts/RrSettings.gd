@@ -17,6 +17,7 @@ const INK := Color(0.078, 0.090, 0.110)
 const WHITE := Color(1, 1, 1)
 const DIM := Color(0.0, 0.0, 0.0, 0.55)
 const PANEL := Rect2(90, 240, 900, 1416)
+const PLAY_Y: float = 1450.0
 const TRACK := Color(1, 1, 1, 0.25)
 const KNOB_PX: int = 84
 const TOP_Y: float = 340.0
@@ -34,6 +35,9 @@ var _music_slider: HSlider
 ## [controls, height, shell_visible, music icon row]
 var _rows: Array = []
 var _music_icon_y: float = -1.0
+## Shell mode: the sound slider has no "Lyd" row, so it gets a speaker.
+var _sfx_icon_y: float = -1.0
+var _panel: Rect2 = PANEL
 
 
 func _ready() -> void:
@@ -49,15 +53,15 @@ func _ready() -> void:
 	_vanlig = _button("Vanlig", 360.0)
 	_lett.pressed.connect(func() -> void: _set_easy(true))
 	_vanlig.pressed.connect(func() -> void: _set_easy(false))
-	_rows.append([[diff_label], 58.0, false, false])
-	_rows.append([[_lett, _vanlig], 150.0, false, false])
+	_rows.append([[diff_label], 54.0, false, false])
+	_rows.append([[_lett, _vanlig], 124.0, false, false])
 	_sound = _button("", 360.0)
 	_sound.pressed.connect(
 		func() -> void:
 			RaceRiders.set_sfx_on(not RaceRiders.sfx_on)
 			refresh()
 	)
-	_rows.append([[_label("Lyd"), _sound], 150.0, false, false])
+	_rows.append([[_label("Lyd"), _sound], 124.0, false, false])
 	_sfx_slider = _slider()
 	_sfx_slider.value_changed.connect(func(v: float) -> void: RaceRiders.set_sfx_volume(v, false))
 	_sfx_slider.drag_ended.connect(
@@ -65,41 +69,41 @@ func _ready() -> void:
 			RaceRiders.save_game()
 			sfx_preview.emit()
 	)
-	_rows.append([[_sfx_slider], 110.0, true, false])
+	_rows.append([[_sfx_slider], 100.0, true, false])
 	_music = _button("", 360.0)
 	_music.pressed.connect(
 		func() -> void:
 			RaceRiders.set_music_on(not RaceRiders.music_on)
 			refresh()
 	)
-	_rows.append([[_music], 150.0, false, true])
+	_rows.append([[_music], 124.0, false, true])
 	_music_slider = _slider()
 	_music_slider.value_changed.connect(
 		func(v: float) -> void: RaceRiders.set_music_volume(v, false)
 	)
 	_music_slider.drag_ended.connect(func(_changed: bool) -> void: RaceRiders.save_game())
-	_rows.append([[_music_slider], 120.0, true, true])
+	_rows.append([[_music_slider], 104.0, true, true])
 	_ghost = _button("", 360.0)
 	_ghost.pressed.connect(
 		func() -> void:
 			RaceRiders.set_ghost_on(not RaceRiders.ghost_on)
 			refresh()
 	)
-	_rows.append([[_label("Spøkelse"), _ghost], 150.0, true, false])
+	_rows.append([[_label("Spøkelse"), _ghost], 124.0, true, false])
 	_motion = _button("", 360.0)
 	_motion.pressed.connect(
 		func() -> void:
 			RaceRiders.set_less_motion(not RaceRiders.less_motion)
 			refresh()
 	)
-	_rows.append([[_label("Mindre bevegelse"), _motion], 150.0, false, false])
+	_rows.append([[_label("Mindre bevegelse"), _motion], 124.0, false, false])
 	_quality = _button("", 360.0)
 	_quality.pressed.connect(
 		func() -> void:
 			RaceRiders.set_quality_high(not RaceRiders.quality_high)
 			refresh()
 	)
-	_rows.append([[_label("Grafikk"), _quality], 150.0, true, false])
+	_rows.append([[_label("Grafikk"), _quality], 124.0, true, false])
 	# Close = big play disc, kept above the wrist strip (y < 1664).
 	play_disc = RrDisc.new()
 	play_disc.icon = "play"
@@ -122,6 +126,7 @@ func _layout() -> void:
 	var shell: bool = RaceRiders.in_shell()
 	var y: float = TOP_Y
 	_music_icon_y = -1.0
+	_sfx_icon_y = -1.0
 	for row: Array in _rows:
 		var show: bool = not shell or bool(row[2])
 		var ctl: Array = row[0]
@@ -133,6 +138,9 @@ func _layout() -> void:
 		var icon_row: bool = bool(row[3]) and _music_icon_y < 0.0
 		if icon_row:
 			_music_icon_y = y + h * 0.5 - (10.0 if ctl[0] is HSlider else 0.0)
+		if shell and ctl[0] == _sfx_slider:
+			icon_row = true
+			_sfx_icon_y = y + h * 0.5 - 10.0
 		if ctl.size() == 2 and ctl[0] is Button:
 			(ctl[0] as Control).position = Vector2(150, y)
 			(ctl[1] as Control).position = Vector2(570, y)
@@ -148,6 +156,10 @@ func _layout() -> void:
 		else:
 			(ctl[0] as Control).position = Vector2(150, y)
 		y += h
+	# The panel ends under the last row in the shell (no empty lower half).
+	var play_y: float = minf(PLAY_Y, y + 30.0) if shell else PLAY_Y
+	play_disc.position = Vector2(540 - 110, play_y)
+	_panel = Rect2(PANEL.position, Vector2(PANEL.size.x, play_y + 226.0 - PANEL.position.y))
 	queue_redraw()
 
 
@@ -194,7 +206,7 @@ func _label(t: String) -> Label:
 func _button(t: String, w: float) -> Button:
 	var b := Button.new()
 	b.text = t
-	b.size = Vector2(w, 130)
+	b.size = Vector2(w, 116)
 	b.focus_mode = Control.FOCUS_NONE
 	add_child(b)
 	return b
@@ -262,6 +274,8 @@ func _style(b: Button, on: bool) -> void:
 
 func _draw() -> void:
 	draw_rect(Rect2(Vector2(-2000, -2000), Vector2(6000, 6000)), DIM)
-	RrDraw.panel(self, PANEL)
+	RrDraw.panel(self, _panel)
+	if _sfx_icon_y >= 0.0:
+		RrDisc.draw_icon(self, "speaker", Vector2(205, _sfx_icon_y), 56.0, WHITE)
 	if _music_icon_y >= 0.0:
 		RrDisc.draw_icon(self, "music", Vector2(205, _music_icon_y), 56.0, WHITE)

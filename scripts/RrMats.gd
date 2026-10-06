@@ -122,6 +122,12 @@ static func livery(kind: String, idx: int) -> StandardMaterial3D:
 	var t: Texture2D = tex(p)
 	if t != null:
 		m.albedo_texture = t
+	if idx > 0:
+		# Rivals dither away when nearer the camera than the player (QA 2):
+		# the player sits about 4.2 m from the camera.
+		m.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_DITHER
+		m.distance_fade_min_distance = 2.0
+		m.distance_fade_max_distance = 4.0
 	_mats[key] = m
 	return m
 

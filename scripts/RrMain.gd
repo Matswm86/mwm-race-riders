@@ -262,6 +262,7 @@ func open_track_page() -> void:
 	page.refresh()
 	page.visible = true
 	sfx.set_ride(0.0, 0.0, false)
+	sfx.set_wind(0.0, false)
 	_holdover()
 	RaceRiders.save_game()
 	_apply_settings()
@@ -324,6 +325,7 @@ func _on_card_home() -> void:
 func _open_settings() -> void:
 	paused = true
 	sfx.set_ride(0.0, 0.0, false)
+	sfx.set_wind(0.0, false)
 	settings.open()
 
 
@@ -486,6 +488,8 @@ func _feel(real: float) -> void:
 		if p.airborne:
 			level *= 0.4
 	sfx.set_ride(level, p.v / RrBalance.CRUISE_MPS, p.vehicle == RrRider.BOARD)
+	var moving: bool = race.phase == RrRace.Phase.RACE or race.phase == RrRace.Phase.DONE
+	sfx.set_wind(p.v if moving else 0.0, boosting)
 	# Race 1 only: a hand taps the boost disc when it first fills.
 	hud.show_boost_hint = (
 		racing and RaceRiders.finishes == 0 and p.meter >= 1.0 and p.full_since < 15.0
@@ -526,7 +530,7 @@ func _slow(scale: float, seconds: float) -> void:
 
 
 func _near(i: int) -> bool:
-	return absf(race.riders[i].s - race.player.s) < 35.0
+	return absf(race.riders[i].s - race.player.s) < 52.0
 
 
 func _handle_events() -> void:
@@ -682,6 +686,7 @@ func _notification(what: int) -> void:
 			if screen == "race" and not settings.visible:
 				paused = true
 				sfx.set_ride(0.0, 0.0, false)
+				sfx.set_wind(0.0, false)
 		NOTIFICATION_APPLICATION_RESUMED:
 			if screen == "race" and paused and not settings.visible:
 				resume_disc.visible = true

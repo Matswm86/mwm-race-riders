@@ -15,12 +15,12 @@ static func skilled_steer(race: RrRace) -> int:
 	var have: bool = false
 	if p.next_pad < trk.pads.size():
 		var pad: Array = trk.pads[p.next_pad]
-		if float(pad[0]) - p.s < 45.0:
+		if float(pad[0]) - p.s < 65.0:
 			target = pad[1]
 			have = true
 	for o: Array in RrAi.obstacles(trk):
 		var ahead: float = float(o[0]) - p.s
-		if float(o[1]) < p.s or ahead > 30.0:
+		if float(o[1]) < p.s or ahead > 45.0:
 			continue
 		if String(o[4]) == "sand" and p.vehicle == RrRider.BOARD:
 			continue
@@ -50,7 +50,7 @@ static func knocker_steer(race: RrRace) -> int:
 		var ds: float = r.s - p.s
 		if absf(ds) < 1.2 and absf(r.x - p.x) < 2.6:
 			return 1 if r.x >= p.x else -1
-		if ds > 0.0 and ds < 9.0 and absf(r.x - p.x) < 4.0:
+		if ds > 0.0 and ds < 13.5 and absf(r.x - p.x) < 4.0:
 			# Come up beside it on its open side, then shoulder it.
 			var side: float = -1.0 if r.x > 0.0 else 1.0
 			return _toward(p.x, clampf(r.x + side * 1.6, -lim, lim))

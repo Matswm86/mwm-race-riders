@@ -31,6 +31,7 @@ func _ready() -> void:
 		_sim_batches(w)
 		_knock_batch(w)
 	_ghost_fade_check()
+	_landing_check()
 	_flash_check()
 	await _main_checks()
 	print("RACE TEST %s (%d failed)" % ["PASS" if fails == 0 else "FAIL", fails])
@@ -105,7 +106,7 @@ func _sim_batches(w: int) -> void:
 	print("idle Lett times %s places %s" % [times, places])
 	_check(in_window, "idle Lett: every race finishes in 35-55 s")
 	_check(top3 >= 9, "idle Lett: top 3 in %d of 10 (need 9)" % top3)
-	_check(min_v >= 11.99, "speed never below 12 m/s after GO (min %.2f)" % min_v)
+	_check(min_v >= 17.99, "speed never below 18 m/s after GO (min %.2f)" % min_v)
 	_check(sand == 0, "idle Lett never rides through a mud/sand patch (%d frames)" % sand)
 	times.clear()
 	places.clear()
@@ -163,6 +164,33 @@ func _knock_batch(w: int) -> void:
 	_check(not down, "the player is never knocked off")
 	_check(slowed == 0, "player speed never drops on contact (%d of %d)" % [slowed, contacts])
 	_check(reknock == 0, "no rival re-knocked inside its 6 s immunity (%d)" % reknock)
+
+
+## GDD 6.3: no pad, hindrance or roller inside a landing slope (lip + 18*air
+## - 3 to lip + 48*air + 5) or the 30 m after it.
+func _landing_check() -> void:
+	for w: int in [1, 2]:
+		var trk := RrTrack.new(w)
+		var bad: Array = []
+		for k: int in trk.kickers.size():
+			var lip: float = trk.kickers[k]
+			var air: float = trk.kicker_air[k]
+			var a: float = lip + 18.0 * air - 3.0
+			var b: float = lip + 48.0 * air + 5.0 + RrBalance.LANDING_CLEAR_AFTER_M * 0.0
+			var items: Array = []
+			for pad: Array in trk.pads:
+				items.append(["pad", float(pad[0])])
+			for bl: Array in trk.blocks:
+				items.append(["hay", float(bl[0])])
+			for pa: Array in trk.patches:
+				items.append(["patch", float(pa[0])])
+			for ro: Array in trk.rollers:
+				items.append(["roller", float(ro[0])])
+			for it: Array in items:
+				if float(it[1]) > a and float(it[1]) < b:
+					bad.append("%s s %.0f in K%d slope %.0f-%.0f" % [it[0], it[1], k + 1, a, b])
+		print("W%d landing zones: %s" % [w, bad if not bad.is_empty() else "clear"])
+		_check(bad.is_empty(), "W%d: nothing inside a landing slope (GDD 6.3)" % w)
 
 
 ## GDD 10.8: hidden at 4 m and closer, full GHOST_ALPHA from 6 m.
@@ -263,11 +291,20 @@ func _main_checks() -> void:
 	var lights_at: float = -1.0
 	var t: float = 0.0
 	Engine.time_scale = 4.0
+	var fov_cruise: Array[float] = []
+	var fov_boost: float = 0.0
 	while not main.card_visible() and t < 200.0:
 		await get_tree().process_frame
 		t += get_process_delta_time()
 		if lights_at < 0.0 and main.race.phase != RrRace.Phase.PRE:
 			lights_at = t
+		var pl: RrRider = main.race.player
+		if main.race.phase == RrRace.Phase.RACE:
+			var since_boost: float = main.race.t - (pl.boost_until - RrBalance.BOOST_TIME_S)
+			if pl.boosting(main.race.t) and since_boost > 0.3:
+				fov_boost = maxf(fov_boost, main.world.camera.fov)
+			elif absf(pl.v - RrBalance.CRUISE_MPS) < 0.3 and main.race.t > pl.boost_until + 1.5:
+				fov_cruise.append(main.world.camera.fov)
 	Engine.time_scale = 1.0
 	var p: RrRider = main.race.player
 	print(
@@ -277,6 +314,17 @@ func _main_checks() -> void:
 		)
 	)
 	_check(lights_at > 0.0 and lights_at <= RrBalance.AUTO_START_S + 0.3, "race starts by itself")
+	var fc: float = 0.0
+	for f: float in fov_cruise:
+		fc += f / float(maxi(1, fov_cruise.size()))
+	print(
+		(
+			"FOV at steady cruise %.1f (%d frames), boost peak %.1f"
+			% [fc, fov_cruise.size(), fov_boost]
+		)
+	)
+	_check(absf(fc - 75.0) <= 1.0, "FOV 75 +-1 at steady cruise (GDD 11.1)")
+	_check(absf(fov_boost - 83.0) <= 1.0, "FOV 83 +-1 at the peak of a boost")
 	_check(
 		p.finish_time >= 35.0 and p.finish_time <= 55.0,
 		"Main scene, no input: finish in 35-55 s (%.2f)" % p.finish_time
@@ -290,6 +338,7 @@ func _main_checks() -> void:
 		"ghost saved (%d rows)" % RaceRiders.ghost_rows(1).size()
 	)
 	_check(int(main.last_result.get("next_world", 0)) == 2, "card's biggest disc is world 2")
+	_check(RaceRiders.launch_world() == 2, "after the W1 finish, launch opens world 2")
 	# Card: next world (through the board and world-2 reveal cards).
 	main.card.next_disc.press()
 	_check(main.card.reveal_kind() == "board", "first reveal: hoverboard")
@@ -297,7 +346,7 @@ func _main_checks() -> void:
 	_check(main.card.reveal_kind() == "world:2", "second reveal: world 2 picture")
 	main.card.tap_reveal()
 	await _frames(2)
-	_check(main.world_id == 2 and main.track.length == 980.0, "race 2 is world 2 (980 m)")
+	_check(main.world_id == 2 and main.track.length == 1470.0, "race 2 is world 2 (1470 m)")
 	_check(main.screen == "race" and main.world.gates_live, "race 2 starts with live swap gates")
 	_check(main.ghost == null, "no ghost on world 2's first run")
 	Engine.time_scale = 4.0
@@ -308,7 +357,7 @@ func _main_checks() -> void:
 		await get_tree().process_frame
 		t += get_process_delta_time()
 		ghost_drawn = ghost_drawn or main.world.ghost_view.visible
-		if main.race.player.s > 350.0 and main.race.player.s < 550.0:
+		if main.race.player.s > 525.0 and main.race.player.s < 825.0:
 			on_board = on_board or main.race.player.vehicle == RrRider.BOARD
 	Engine.time_scale = 1.0
 	var p2: RrRider = main.race.player
@@ -320,7 +369,8 @@ func _main_checks() -> void:
 	_check(p2.finish_time >= 35.0 and p2.finish_time <= 55.0, "race 2 finish in 35-55 s")
 	_check(RaceRiders.seen_first_swap, "first swap slow-mo shown once (flag saved)")
 	_check(not ghost_drawn, "ghost never drawn on world 2's first run")
-	_check(RaceRiders.launch_world() == 1 or RaceRiders.launch_world() == 2, "launch world valid")
+	# Both worlds finished: launch goes to the last world played (world 2).
+	_check(RaceRiders.launch_world() == 2, "launch world is world 2 after racing it")
 	# Replay world 1: its ghost is back, never drawn within 4 m of the player.
 	main.start_race(1)
 	_check(main.ghost != null, "world 1 replay has its ghost")
@@ -328,7 +378,7 @@ func _main_checks() -> void:
 	t = 0.0
 	var near_drawn: int = 0
 	var far_drawn: int = 0
-	while main.race.player.s < 600.0 and t < 120.0:
+	while main.race.player.s < 900.0 and t < 120.0:
 		await get_tree().process_frame
 		t += get_process_delta_time()
 		if main.race.phase != RrRace.Phase.RACE:

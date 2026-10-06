@@ -18,6 +18,7 @@ const PLACE_Y: float = 350.0
 const TIME_X: float = 780.0
 const LAMP_Y: float = 640.0
 const CHARGE_R: float = 100.0
+const STREAKS: int = 16
 
 var race: RrRace
 var world: RrWorld
@@ -50,6 +51,12 @@ var _knock_t: Array[float] = [99.0, 99.0, 99.0, 99.0, 99.0, 99.0]
 var _time_txt: String = ""
 var _time_next: float = 0.0
 var _streak_k: float = 0.0
+var _speed_v: float = 0.0
+## Speed lines: x (0..1 of the screen), y progress, speed factor, per line.
+var _sx: PackedFloat32Array = PackedFloat32Array()
+var _sy: PackedFloat32Array = PackedFloat32Array()
+var _sk: PackedFloat32Array = PackedFloat32Array()
+var _srng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
@@ -140,10 +147,21 @@ func _process(delta: float) -> void:
 			_time_next = _clock + 0.1
 			var tt: float = maxf(0.0, race.t)
 			_time_txt = "%d:%04.1f" % [int(tt / 60.0), fmod(tt, 60.0)]
+		# GDD 11.1 speed lines: from SPEED_LINES_FROM_MPS, full at
+		# SPEED_LINES_FULL_MPS; never in less motion.
 		var want: float = 0.0
-		if not less_motion and p.boosting(race.t) and race.phase == RrRace.Phase.RACE:
-			want = 1.0
-		_streak_k = move_toward(_streak_k, want, delta * 4.0)
+		if not less_motion and race.phase == RrRace.Phase.RACE:
+			want = clampf(
+				(
+					(p.v - RrBalance.SPEED_LINES_FROM_MPS)
+					/ (RrBalance.SPEED_LINES_FULL_MPS - RrBalance.SPEED_LINES_FROM_MPS)
+				),
+				0.0,
+				1.0
+			)
+		_speed_v = p.v
+		_streak_k = move_toward(_streak_k, want, delta * 2.0)
+		_move_streaks(delta)
 	queue_redraw()
 
 
@@ -282,18 +300,42 @@ func _draw_over_riders() -> void:
 				_spr("knock%d" % race.riders[i].livery, at)
 
 
-## Boost (DESIGN 7): six white speed streaks at the screen sides, 22% alpha.
-func _draw_streaks() -> void:
+func _new_streak(i: int, y: float) -> void:
+	# Outer 25% of the screen, either side, random spot (never a stripe pattern).
+	var u: float = _srng.randf_range(0.02, 0.25)
+	_sx[i] = u if _srng.randf() < 0.5 else 1.0 - u
+	_sy[i] = y
+	_sk[i] = _srng.randf_range(0.7, 1.3)
+
+
+func _move_streaks(delta: float) -> void:
+	if _sx.is_empty():
+		_sx.resize(STREAKS)
+		_sy.resize(STREAKS)
+		_sk.resize(STREAKS)
+		for i: int in STREAKS:
+			_new_streak(i, _srng.randf())
 	if _streak_k <= 0.01:
 		return
-	var a: float = 0.22 * _streak_k
-	for i: int in 6:
-		var side: float = -1.0 if i % 2 == 0 else 1.0
-		var lane: float = float(i / 2)
-		var x: float = size.x * 0.5 + side * (size.x * 0.5 - 50.0 - lane * 60.0)
-		var period: float = 0.42 + 0.07 * lane
-		var y: float = fmod(_clock / period + lane * 0.31, 1.0) * (size.y + 600.0) - 300.0
-		_rect(Rect2(x - 4.0, y, 8.0, 280.0), Color(1, 1, 1, a))
+	var rate: float = 0.6 + _speed_v / 30.0
+	for i: int in STREAKS:
+		_sy[i] += delta * rate * _sk[i]
+		if _sy[i] > 1.0:
+			_new_streak(i, _srng.randf_range(-0.3, 0.0))
+
+
+## GDD 11.1: thin soft streaks in the outer quarter, alpha up to 0.25,
+## longer with speed, close to the background colour (rule 38).
+func _draw_streaks() -> void:
+	if _streak_k <= 0.01 or _sx.is_empty():
+		return
+	var a: float = 0.25 * _streak_k
+	var length: float = 220.0 + 480.0 * _streak_k
+	for i: int in STREAKS:
+		var x: float = size.x * _sx[i]
+		var y: float = _sy[i] * (size.y + length) - length
+		var w: float = 4.0 + 6.0 * absf(_sx[i] - 0.5) * 2.0
+		_rect(Rect2(x - w * 0.5, y, w, length * _sk[i]), Color(0.92, 0.90, 0.86, a))
 
 
 func _draw_hints() -> void:

@@ -194,6 +194,21 @@ static func draw_icon(
 			ci.draw_colored_polygon(body, col)
 			for ex: float in [-0.22, 0.22]:
 				ci.draw_circle(c + Vector2(ex, -0.15) * s, s * 0.12, hole)
+		"speaker":
+			var body := PackedVector2Array(
+				[
+					c + Vector2(-0.75, -0.25) * s,
+					c + Vector2(-0.35, -0.25) * s,
+					c + Vector2(0.1, -0.65) * s,
+					c + Vector2(0.1, 0.65) * s,
+					c + Vector2(-0.35, 0.25) * s,
+					c + Vector2(-0.75, 0.25) * s,
+				]
+			)
+			ci.draw_colored_polygon(body, col)
+			for k: int in 2:
+				var r: float = (0.42 + 0.3 * float(k)) * s
+				ci.draw_arc(c + Vector2(0.1, 0) * s, r, -0.8, 0.8, 16, col, s * 0.12, true)
 		"music":
 			# Two beamed eighth notes.
 			var w: float = s * 0.14

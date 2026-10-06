@@ -35,6 +35,9 @@ func set_tier(sun_shadows: bool, shafts: bool) -> void:
 	_contacts.visible = not sun_shadows
 	if _shafts != null:
 		_shafts.visible = shafts
+	# Lav (32-bit tablet, <= 60 draws): one weather layer per world.
+	for i: int in range(1, _weather.size()):
+		_weather[i].visible = shafts
 
 
 func tick(race: RrRace, dt: float, camera: Camera3D, cam_yaw: float) -> void:
@@ -210,6 +213,7 @@ func _build_shafts() -> void:
 
 func _update_contacts(race: RrRace) -> void:
 	var lav: bool = _contacts.visible
+	var any_board: bool = false
 	for i: int in race.riders.size():
 		var r: RrRider = race.riders[i]
 		var base := Transform3D(
@@ -223,10 +227,13 @@ func _update_contacts(race: RrRace) -> void:
 				i, Transform3D(base.basis.scaled(Vector3.ONE * k), base.origin)
 			)
 		var on_board: bool = r.vehicle == RrRider.BOARD and not r.down()
+		any_board = any_board or on_board
 		var g: float = 1.0 if on_board else 0.0
 		_glows.multimesh.set_instance_transform(
 			i, Transform3D(base.basis.scaled(Vector3.ONE * g), base.origin + Vector3.UP * 0.02)
 		)
+	# No board on the track: the glow layer costs no draw call.
+	_glows.visible = any_board
 
 
 ## DESIGN 7 rolling dust: two puffs per second behind each rear wheel, near
@@ -239,7 +246,7 @@ func _roll_dust(race: RrRace, dt: float) -> void:
 		var r: RrRider = race.riders[i]
 		if r.airborne or r.v < 6.0 or r.vehicle == RrRider.BOARD or r.finished:
 			continue
-		if absf(r.s - race.player.s) > 40.0:
+		if absf(r.s - race.player.s) > 60.0:
 			continue
 		_roll_dust_t[i] -= dt
 		if _roll_dust_t[i] > 0.0:
