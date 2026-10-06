@@ -1,16 +1,22 @@
 extends Node
 
-## Headless race test. Run with a throwaway user dir:
-##   XDG_DATA_HOME=<tmp> godot --headless --audio-driver Dummy res://tests/race_test.tscn
-## 1. Pure sim: 10 idle Lett races (finish 35-55 s, top 3 in >= 9 of 10,
-##    speed never under 12 m/s after GO), 10 idle Vanlig races, 10 skilled
-##    Vanlig bot races (GDD 14 acceptance: wins by >= 1.5 s in 9 of 10).
+## Headless race test. Run with a throwaway user dir, at portrait size:
+##   XDG_DATA_HOME=<tmp> godot --headless --audio-driver Dummy --resolution 1080x1920 \
+##     res://tests/race_test.tscn
+## 1. Pure sim, both worlds: 10 idle Lett races (finish 35-55 s, top 3 in
+##    >= 9 of 10, speed never under 12 m/s after GO; W2: never in a sand
+##    drift), 10 idle Vanlig races, 10 skilled Vanlig bot races (GDD 14:
+##    wins by >= 1.5 s in 9 of 10, reported), knock-off bot races (GDD 4.7:
+##    the player knocks rivals off, is never knocked off, never loses speed
+##    on contact, never re-knocks a rival inside its 6 s immunity).
 ## 2. Flash limiter: never more than 3 bright flares in any 1 s window.
 ## 3. Touch zones: home and gear squares, wrist strip, boost disc, steering
 ##    halves, latest touch wins.
-## 4. The real Main scene with no input at all: the race starts by itself,
-##    finishes in 35-55 s and the card appears; race 2 has live gates, the
-##    player swaps to the hoverboard and the ghost rides along.
+## 4. The real Main scene with no input at all: world 1 starts by itself,
+##    finishes in 35-55 s and the card appears; its biggest disc opens world
+##    2 (a different track) with live gates and the hoverboard, and no ghost
+##    on that first run; replaying world 1 brings its ghost, faded near the
+##    player.
 ## Prints PASS/FAIL per check and "RACE TEST PASS" / "RACE TEST FAIL".
 
 var fails: int = 0
@@ -21,7 +27,10 @@ func _ready() -> void:
 	RaceRiders.easy = true
 	RaceRiders.ghost_on = true
 	_bake_check()
-	_sim_batches()
+	for w: int in [1, 2]:
+		_sim_batches(w)
+		_knock_batch(w)
+	_ghost_fade_check()
 	_flash_check()
 	await _main_checks()
 	print("RACE TEST %s (%d failed)" % ["PASS" if fails == 0 else "FAIL", fails])
@@ -36,10 +45,14 @@ func _check(ok: bool, what: String) -> void:
 
 
 ## Runs one race in the pure sim. strat: "idle" or "skilled".
-func _run(easy: bool, hover: bool, strat: String, seed_v: int) -> RrRace:
+func _run(w: int, easy: bool, hover: bool, strat: String, seed_v: int) -> RrRace:
 	var race := RrRace.new()
-	race.setup(RrTrack.new(), easy, hover, seed_v)
+	race.setup(RrTrack.new(w), easy, hover, seed_v)
 	race.start_lights()
+	race.set_meta(&"patch_frames", 0)
+	race.set_meta(&"player_down", false)
+	race.set_meta(&"reknock", 0)
+	var last_ride: Dictionary = {}
 	var n: int = 0
 	while race.phase != RrRace.Phase.DONE and n < 60 * 120:
 		var steer: int = 0
@@ -47,8 +60,22 @@ func _run(easy: bool, hover: bool, strat: String, seed_v: int) -> RrRace:
 		if strat == "skilled":
 			steer = RrBot.skilled_steer(race)
 			tap = race.player.meter >= 1.0
+		elif strat == "knock":
+			steer = RrBot.knocker_steer(race)
+			tap = race.player.meter >= 1.0
 		race.step(1.0 / 60.0, steer, tap)
+		for e: Array in race.events:
+			if e[0] == "knock":
+				var who: int = e[1]
+				# Riding again at fall 1.7 s; a new knock needs 6 s after that.
+				if last_ride.has(who) and race.t - float(last_ride[who]) < RrBalance.KNOCK_IMMUNE_S:
+					race.set_meta(&"reknock", int(race.get_meta(&"reknock")) + 1)
+				last_ride[who] = race.t + RrBalance.FALL_DOWN_S + RrBalance.GETUP_S
 		race.events.clear()
+		if race.player.patch_mult < 1.0:
+			race.set_meta(&"patch_frames", int(race.get_meta(&"patch_frames")) + 1)
+		if race.player.fall_t >= 0.0 or race.player.knocked:
+			race.set_meta(&"player_down", true)
 		n += 1
 	# Let the pack finish so the margin is known.
 	var extra: int = 0
@@ -59,15 +86,18 @@ func _run(easy: bool, hover: bool, strat: String, seed_v: int) -> RrRace:
 	return race
 
 
-func _sim_batches() -> void:
+func _sim_batches(w: int) -> void:
+	print("--- world %d" % w)
 	var times: Array[float] = []
 	var places: Array[int] = []
 	var min_v: float = 999.0
+	var sand: int = 0
 	for k: int in 10:
-		var r: RrRace = _run(true, false, "idle", 500 + k)
+		var r: RrRace = _run(w, true, w == 2, "idle", 500 + k)
 		times.append(snappedf(r.player.finish_time, 0.1))
 		places.append(r.player.place)
 		min_v = minf(min_v, r.min_speed_after_go)
+		sand += int(r.get_meta(&"patch_frames"))
 	var in_window: bool = true
 	for t: float in times:
 		in_window = in_window and t >= 35.0 and t <= 55.0
@@ -76,10 +106,11 @@ func _sim_batches() -> void:
 	_check(in_window, "idle Lett: every race finishes in 35-55 s")
 	_check(top3 >= 9, "idle Lett: top 3 in %d of 10 (need 9)" % top3)
 	_check(min_v >= 11.99, "speed never below 12 m/s after GO (min %.2f)" % min_v)
+	_check(sand == 0, "idle Lett never rides through a mud/sand patch (%d frames)" % sand)
 	times.clear()
 	places.clear()
 	for k: int in 10:
-		var r2: RrRace = _run(false, true, "idle", 600 + k)
+		var r2: RrRace = _run(w, false, true, "idle", 600 + k)
 		times.append(snappedf(r2.player.finish_time, 0.1))
 		places.append(r2.player.place)
 	print("idle Vanlig times %s places %s" % [times, places])
@@ -87,7 +118,7 @@ func _sim_batches() -> void:
 	var wins: int = 0
 	var margins: Array[float] = []
 	for k: int in 10:
-		var r3: RrRace = _run(false, true, "skilled", 700 + k)
+		var r3: RrRace = _run(w, false, true, "skilled", 700 + k)
 		var second: float = 999.0
 		for o: RrRider in r3.riders:
 			if not o.is_player:
@@ -105,26 +136,68 @@ func _sim_batches() -> void:
 	_check(all_win, "skilled Vanlig bot wins every race")
 
 
-## The shipped static world must match what RrWorldGen builds now.
+## GDD 4.7 / 14: a bot that holds toward every rival it passes knocks off at
+## least 2 per race, the player is never knocked off and never slowed by any
+## contact, and no rival is knocked again inside its immunity.
+func _knock_batch(w: int) -> void:
+	var counts: Array[int] = []
+	var slowed: int = 0
+	var contacts: int = 0
+	var down: bool = false
+	var reknock: int = 0
+	for k: int in 10:
+		var r: RrRace = _run(w, k % 2 == 0, true, "knock", 800 + k)
+		var c: int = 0
+		for o: RrRider in r.riders:
+			c += o.knock_count
+		counts.append(c)
+		for e: Array in r.contact_log:
+			contacts += 1
+			if float(e[2]) < float(e[1]) - 0.0001:
+				slowed += 1
+		down = down or bool(r.get_meta(&"player_down"))
+		reknock += int(r.get_meta(&"reknock"))
+	var two: int = counts.filter(func(c: int) -> bool: return c >= 2).size()
+	print("knock bot W%d knock-offs per race %s, player contacts %d" % [w, counts, contacts])
+	_check(two >= 8, "knock bot knocks off >= 2 rivals in %d of 10 races (need 8)" % two)
+	_check(not down, "the player is never knocked off")
+	_check(slowed == 0, "player speed never drops on contact (%d of %d)" % [slowed, contacts])
+	_check(reknock == 0, "no rival re-knocked inside its 6 s immunity (%d)" % reknock)
+
+
+## GDD 10.8: hidden at 4 m and closer, full GHOST_ALPHA from 6 m.
+func _ghost_fade_check() -> void:
+	var a3: float = RrWorld.ghost_fade(3.0, 0.5)
+	var a5: float = RrWorld.ghost_fade(5.0, 0.0)
+	var a8: float = RrWorld.ghost_fade(8.0, 1.0)
+	print("ghost alpha at 3 m %.2f, 5 m %.2f, 8 m %.2f" % [a3, a5, a8])
+	_check(a3 == 0.0 and a5 > 0.0 and a5 < RrBalance.GHOST_ALPHA, "ghost fades out within 4 m")
+	_check(absf(a8 - RrBalance.GHOST_ALPHA) < 0.001, "ghost fully visible from 6 m")
+
+
+## The shipped static worlds must match what RrWorldGen builds now.
 func _bake_check() -> void:
-	var baked: Resource = load(RrWorld.BAKED_PATH)
-	var ok_v: bool = baked != null and int(baked.get_meta(&"version", -1)) == RrWorldBake.VERSION
-	var gen := RrWorldGen.new()
-	gen.build(RrTrack.new())
-	var fresh: int = 0
-	for e: Array in gen.meshes():
-		fresh += int(e[3])
-	var shipped: int = 0
-	if baked != null:
-		for e: Array in baked.get_meta(&"chunks", []):
-			shipped += int(e[3])
-	print("world build %d ms, %d tris fresh vs %d baked" % [gen.build_ms, fresh, shipped])
-	_check(ok_v and fresh == shipped, "baked world is current (re-run tests/bake_world.gd if not)")
+	for w: int in range(1, RrBalance.WORLDS_BUILT + 1):
+		var baked: Resource = load(RrWorldBake.path_for(w))
+		var ok_v: bool = (
+			baked != null and int(baked.get_meta(&"version", -1)) == RrWorldBake.VERSION
+		)
+		var gen := RrWorldGen.new()
+		gen.build(RrTrack.new(w))
+		var fresh: int = 0
+		for e: Array in gen.ground:
+			fresh += int(e[2])
+		var shipped: int = 0
+		if baked != null:
+			for e: Array in (baked.get_meta(&"world", {}) as Dictionary).get("ground", []):
+				shipped += int(e[2])
+		print("world %d build %d ms, %d tris fresh vs %d baked" % [w, gen.build_ms, fresh, shipped])
+		_check(ok_v and fresh == shipped, "world %d bake is current" % w)
 
 
 func _flash_check() -> void:
 	var race := RrRace.new()
-	race.setup(RrTrack.new(), true, true, 42)
+	race.setup(RrTrack.new(1), true, true, 42)
 	race.start_lights()
 	var lim := RrFlashLimiter.new()
 	var granted: Array[float] = []
@@ -153,11 +226,16 @@ func _flash_check() -> void:
 
 
 func _main_checks() -> void:
+	# Headless ignores --resolution: force the portrait window (QA finding 11).
+	get_window().size = Vector2i(1080, 1920)
+	await _frames(2)
 	var main: RrMain = load("res://scenes/Main.tscn").instantiate()
 	add_child(main)
 	await _frames(3)
-	# Touch zones.
+	# Touch zones, at portrait size (QA finding 11).
 	var vs: Vector2 = get_viewport().get_visible_rect().size
+	print("viewport %s" % [vs])
+	_check(vs.x < vs.y, "touch checks run on a portrait viewport")
 	_check(main._zone(Vector2(100, 100)) == "none", "touch in the home square never steers")
 	_check(main._zone(Vector2(vs.x - 100, 100)) == "none", "touch in the gear square never steers")
 	_check(main._zone(Vector2(300, vs.y - 100)) == "none", "touch in the wrist strip is ignored")
@@ -192,7 +270,6 @@ func _main_checks() -> void:
 			lights_at = t
 	Engine.time_scale = 1.0
 	var p: RrRider = main.race.player
-	print("viewport %s" % [vs])
 	print(
 		(
 			"main race 1: auto start after %.1f s, finish %.2f s, place %d, card %s"
@@ -212,19 +289,25 @@ func _main_checks() -> void:
 		RaceRiders.ghost_rows(1).size() > 300,
 		"ghost saved (%d rows)" % RaceRiders.ghost_rows(1).size()
 	)
-	# Card: replay (through the reveal card), race 2 with live gates and ghost.
-	main.card.replay_disc.press()
-	_check(main.card.is_revealing(), "unlock reveal card shows after the first disc tap")
+	_check(int(main.last_result.get("next_world", 0)) == 2, "card's biggest disc is world 2")
+	# Card: next world (through the board and world-2 reveal cards).
+	main.card.next_disc.press()
+	_check(main.card.reveal_kind() == "board", "first reveal: hoverboard")
+	main.card.tap_reveal()
+	_check(main.card.reveal_kind() == "world:2", "second reveal: world 2 picture")
 	main.card.tap_reveal()
 	await _frames(2)
+	_check(main.world_id == 2 and main.track.length == 980.0, "race 2 is world 2 (980 m)")
 	_check(main.screen == "race" and main.world.gates_live, "race 2 starts with live swap gates")
-	_check(main.ghost != null, "race 2 has the ghost")
+	_check(main.ghost == null, "no ghost on world 2's first run")
 	Engine.time_scale = 4.0
 	t = 0.0
 	var on_board: bool = false
+	var ghost_drawn: bool = false
 	while not main.card_visible() and t < 200.0:
 		await get_tree().process_frame
 		t += get_process_delta_time()
+		ghost_drawn = ghost_drawn or main.world.ghost_view.visible
 		if main.race.player.s > 350.0 and main.race.player.s < 550.0:
 			on_board = on_board or main.race.player.vehicle == RrRider.BOARD
 	Engine.time_scale = 1.0
@@ -236,6 +319,32 @@ func _main_checks() -> void:
 	_check(p2.vehicle == RrRider.BIKE, "player is back on the bike after gate 2")
 	_check(p2.finish_time >= 35.0 and p2.finish_time <= 55.0, "race 2 finish in 35-55 s")
 	_check(RaceRiders.seen_first_swap, "first swap slow-mo shown once (flag saved)")
+	_check(not ghost_drawn, "ghost never drawn on world 2's first run")
+	_check(RaceRiders.launch_world() == 1 or RaceRiders.launch_world() == 2, "launch world valid")
+	# Replay world 1: its ghost is back, never drawn within 4 m of the player.
+	main.start_race(1)
+	_check(main.ghost != null, "world 1 replay has its ghost")
+	Engine.time_scale = 4.0
+	t = 0.0
+	var near_drawn: int = 0
+	var far_drawn: int = 0
+	while main.race.player.s < 600.0 and t < 120.0:
+		await get_tree().process_frame
+		t += get_process_delta_time()
+		if main.race.phase != RrRace.Phase.RACE:
+			continue
+		var row: Array = main.ghost.sample(main.race.t)
+		var ds: float = float(row[0]) - main.race.player.s
+		var dx: float = float(row[1]) - main.race.player.x
+		var d: float = sqrt(ds * ds + dx * dx)
+		if main.world.ghost_view.visible:
+			if d <= RrBalance.GHOST_FADE_NEAR_M:
+				near_drawn += 1
+			else:
+				far_drawn += 1
+	Engine.time_scale = 1.0
+	print("W1 replay ghost frames drawn: far %d, within 4 m %d" % [far_drawn, near_drawn])
+	_check(near_drawn == 0, "ghost never drawn within 4 m of the player")
 	main.queue_free()
 	await _frames(2)
 

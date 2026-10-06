@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="MWM Race Riders"
-config/description="Toy downhill racer for children: hold left or right to steer. No ads, offline."
+config/description="Realistic downhill racer for children: hold left or right to steer a mountain bike and a hoverboard against five rivals through a pine forest and a red canyon. No ads, offline."
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.6", "Mobile")
 config/quit_on_go_back=false
