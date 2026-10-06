@@ -3,21 +3,28 @@ class_name RrState
 extends Node
 
 ## Autoload "RaceRiders": save file, settings, progress and the public hooks
-## a host app (MWM Play) calls (GDD 9.2, 12). The stand-alone build never
-## calls the hooks, so it keeps everything open (the owner's own copy).
+## a host app (MWM Play) calls (GDD 9.2, 12, 17.5). The stand-alone build
+## never calls the hooks, so it keeps everything open (the owner's own copy):
+## every built track and Pro variant can be free-ridden, and the league
+## ladder climbs as far as its worlds exist.
 ##
 ## Hooks: set_full_unlock(on), set_difficulty(easy), set_shell_inset(inset),
 ## set_sfx_on / set_music_on / set_haptics_on / set_less_motion, save_game().
 ## Signals up: level_card_shown(track_id), free_levels_finished().
-## Progress is per world (GDD 9.1): world N+1 opens on the first finish of
-## world N, any place. The "track id" the shell sees is the world id.
+## track_id = world x 10 + track number, +100 for a Pro variant (RrTracks).
+## full_unlock false (GDD 17.5) = the Bronze III season only (world 1 tracks
+## 1-5); its season end sends free_levels_finished (once per app session)
+## instead of promoting, and the season can be replayed forever.
+## Progress is per track (best time, best place, ghost, medal); the ladder
+## lives in an RrLeague. Saves from the two-world slice (version 1) migrate:
+## world N's best run becomes track wN_t1's.
 
 signal level_card_shown(track_id: int)
 signal free_levels_finished
 signal settings_changed
 
 const SAVE_PATH := "user://race_riders_save.json"
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
 const SHELL_META := &"mwm_play_shell"
 
 var full_unlock: bool = true
@@ -39,12 +46,20 @@ var quality_auto_dropped: bool = false
 var finishes: int = 0
 var hover_unlocked: bool = false
 var seen_first_swap: bool = false
-## world id (String) -> {best_time, best_place, won, ghost}
-var worlds: Dictionary = {}
+## track key -> {best_time, best_place, won, ghost, medal}
+var tracks: Dictionary = {}
 var cosmetics: Dictionary = {"outfit": 1, "bike": 1, "board": 1, "owned": []}
-var last_world: int = 1
+var league := RrLeague.new()
+## The full ladder while a host has locked the game (restored on unlock).
+var parked_league: Dictionary = {}
+## Unix time of the last save (rivals' form after 8 h away, GDD 17.2).
+var last_seen: float = 0.0
+## True when the last load gave the rivals a form (arrows on the table).
+var form_shown: bool = false
 ## True when no save existed at start: the race starts by itself sooner.
 var first_launch: bool = true
+## The save was a version-1 (two-world) save, migrated at load.
+var migrated_from: int = 0
 var _free_card_sent: bool = false
 
 
@@ -61,7 +76,30 @@ func in_shell() -> bool:
 
 
 func set_full_unlock(on: bool) -> void:
+	if full_unlock == on:
+		return
 	full_unlock = on
+	if not on and (league.league > 0 or league.tier > 0):
+		# Locked: race the Bronze III season; park the full ladder.
+		parked_league = league.to_dict()
+		var seed_v: int = league.save_seed
+		league = RrLeague.new()
+		league.save_seed = seed_v
+	elif on and not parked_league.is_empty():
+		league = RrLeague.new()
+		league.from_dict(parked_league)
+		parked_league = {}
+	settings_changed.emit()
+
+
+func locked() -> bool:
+	return not full_unlock
+
+
+## "Nedrykk" (GDD 17.2): Vanlig soft demotion, default off.
+func set_demotion(on: bool) -> void:
+	league.demotion_on = on
+	save_game()
 	settings_changed.emit()
 
 
@@ -136,67 +174,57 @@ func set_less_motion(on: bool) -> void:
 # ---------------------------------------------------------------- progress
 
 
-func world_data(world_id: int) -> Dictionary:
-	return worlds.get(str(world_id), {})
+func track_data(key: String) -> Dictionary:
+	return tracks.get(key, {})
 
 
-## Ghost of this world only (GDD 10.8); empty until the world is finished.
-func ghost_rows(world_id: int) -> Array:
-	return world_data(world_id).get("ghost", [])
+## Ghost of this track only (GDD 10.8); empty until the track is finished.
+func ghost_rows(key: String) -> Array:
+	return track_data(key).get("ghost", [])
 
 
-func best_time(world_id: int) -> float:
-	return float(world_data(world_id).get("best_time", 0.0))
+func best_time(key: String) -> float:
+	return float(track_data(key).get("best_time", 0.0))
 
 
-func finished_world(world_id: int) -> bool:
-	return best_time(world_id) > 0.0
+func finished_track(key: String) -> bool:
+	return best_time(key) > 0.0
 
 
-## Worlds the player may race (GDD 9.1-9.2): world 1, plus each world whose
-## previous world has been finished. Only built worlds; the free part in MWM
-## Play (full_unlock false) is world 1 only.
-func open_worlds() -> Array[int]:
-	var out: Array[int] = [1]
-	var cap: int = RrBalance.WORLDS_BUILT if full_unlock else RrBalance.FREE_WORLDS
-	for w: int in range(2, cap + 1):
-		if finished_world(w - 1):
-			out.append(w)
-		else:
-			break
+## Medal earned on a track: 1 gold, 2 silver, 3 bronze, 0 none.
+func medal(key: String) -> int:
+	return RrTracks.medal_for(key, best_time(key))
+
+
+## Tracks the free ride offers (GDD 17.2): every built track and Pro variant
+## in the stand-alone build; the Bronze III tracks when a host locks it.
+func free_ride_tracks() -> Array[String]:
+	var out: Array[String] = []
+	if locked():
+		for k: int in range(1, RrBalance.FREE_TRACKS_W1 + 1):
+			out.append(RrTracks.key(1, k))
+		return out
+	for k: String in RrTracks.all_keys(true):
+		if RrTracks.exists(k):
+			out.append(k)
 	return out
 
 
-## Worlds the world page shows (open ones only; unopened are not drawn).
-func visible_worlds() -> Array[int]:
-	return open_worlds()
+func can_ride(key: String) -> bool:
+	return key in free_ride_tracks() or key == league.next_track()
 
 
-## The open world not raced to the finish yet, or 0 (GDD 10.3 next disc).
-func next_new_world() -> int:
-	for w: int in open_worlds():
-		if not finished_world(w):
-			return w
-	return 0
+## GDD 10.2: every launch goes straight into the next league race.
+func launch_track() -> String:
+	return league.next_track()
 
 
-## GDD 10.2: launch into the newest open world not yet finished, else the
-## last world played.
-func launch_world() -> int:
-	var n: int = next_new_world()
-	if n > 0:
-		return n
-	var open: Array[int] = open_worlds()
-	return last_world if last_world in open else open[open.size() - 1]
-
-
-## Record a finish (GDD 9-10). Returns what the card needs:
-## {first, new_best, prev_best, unlocked_hover, unlocked_world (id or 0)}.
-func record_finish(world_id: int, time_s: float, place: int, ghost: Array) -> Dictionary:
-	var key: String = str(world_id)
-	var open_before: Array[int] = open_worlds()
-	var d: Dictionary = worlds.get(key, {})
+## Record a finish on a track (GDD 10.3, 17.3). Returns what the card needs:
+## {first, new_best, prev_best, unlocked_hover, medal, new_medal}.
+func record_finish(key: String, time_s: float, place: int, ghost: Array) -> Dictionary:
+	var d: Dictionary = tracks.get(key, {})
 	var prev: float = float(d.get("best_time", 0.0))
+	var old_medal: int = RrTracks.medal_for(key, prev)
 	var first: bool = prev <= 0.0
 	var new_best: bool = first or time_s < prev
 	if new_best:
@@ -204,36 +232,47 @@ func record_finish(world_id: int, time_s: float, place: int, ghost: Array) -> Di
 		d["ghost"] = ghost
 	d["best_place"] = mini(int(d.get("best_place", 9)), place)
 	d["won"] = bool(d.get("won", false)) or place == 1
-	worlds[key] = d
+	var m: int = RrTracks.medal_for(key, float(d["best_time"]))
+	d["medal"] = m
+	tracks[key] = d
 	finishes += 1
 	first_launch = false
-	last_world = world_id
 	var unlocked: bool = false
 	if not hover_unlocked and finishes >= RrBalance.UNLOCK_HOVER:
 		hover_unlocked = true
 		unlocked = true
-	var new_world: int = 0
-	for w: int in open_worlds():
-		if not w in open_before:
-			new_world = w
 	save_game()
 	return {
 		"first": first,
 		"new_best": new_best,
 		"prev_best": prev,
 		"unlocked_hover": unlocked,
-		"unlocked_world": new_world,
+		"medal": m,
+		"new_medal": m > 0 and (old_medal == 0 or m < old_medal),
 	}
 
 
-## GDD 9.2: from total finish FREE_CARD_FROM_FINISH on, at most once per app
-## session, only when the host has locked the full game.
-func maybe_free_card() -> bool:
-	if full_unlock or _free_card_sent or finishes < RrBalance.FREE_CARD_FROM_FINISH:
-		return false
-	_free_card_sent = true
-	free_levels_finished.emit()
-	return true
+## A league round was raced (finish: rider index -> time; 0 = player).
+func record_league_round(heat: Array[int], finish: Array[float]) -> Dictionary:
+	var r: Dictionary = league.record_round(heat, finish, easy)
+	save_game()
+	return r
+
+
+## Close the season (GDD 17.2 / 17.5). In the locked free part the shell
+## gets free_levels_finished (at most once per app session) instead of a
+## promotion.
+func end_season() -> Dictionary:
+	var r: Dictionary = league.end_season(easy, locked())
+	for rw: String in league.rewards:
+		if not rw in (cosmetics.get("owned", []) as Array):
+			(cosmetics["owned"] as Array).append(rw)
+	if locked() and not _free_card_sent:
+		_free_card_sent = true
+		r["free_card"] = true
+		free_levels_finished.emit()
+	save_game()
+	return r
 
 
 func mark_first_swap_seen() -> void:
@@ -242,14 +281,17 @@ func mark_first_swap_seen() -> void:
 
 
 func save_game() -> void:
+	last_seen = Time.get_unix_time_from_system()
 	var data: Dictionary = {
 		"version": SAVE_VERSION,
 		"finishes": finishes,
 		"hover_unlocked": hover_unlocked,
 		"seen_first_swap": seen_first_swap,
-		"worlds": worlds,
+		"tracks": tracks,
+		"league": league.to_dict(),
+		"parked_league": parked_league,
 		"cosmetics": cosmetics,
-		"last_world": last_world,
+		"last_seen": last_seen,
 		"difficulty": "lett" if easy else "vanlig",
 		"settings":
 		{
@@ -274,6 +316,7 @@ func save_game() -> void:
 func load_game() -> void:
 	if not FileAccess.file_exists(SAVE_PATH):
 		first_launch = true
+		_new_seed()
 		return
 	first_launch = false
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
@@ -284,13 +327,12 @@ func load_game() -> void:
 	finishes = maxi(0, int(d.get("finishes", 0)))
 	hover_unlocked = bool(d.get("hover_unlocked", finishes >= RrBalance.UNLOCK_HOVER))
 	seen_first_swap = bool(d.get("seen_first_swap", false))
-	# Saves from the toy slice kept track 1 under "tracks" (= world 1).
-	var w: Variant = d.get("worlds", d.get("tracks", {}))
-	worlds = w if w is Dictionary else {}
+	_load_progress(d)
 	var c: Variant = d.get("cosmetics", {})
 	if c is Dictionary:
 		cosmetics = c
-	last_world = clampi(int(d.get("last_world", d.get("last_track", 1))), 1, RrBalance.WORLD_COUNT)
+		if not cosmetics.get("owned", []) is Array:
+			cosmetics["owned"] = []
 	easy = String(d.get("difficulty", "lett")) != "vanlig"
 	var s: Variant = d.get("settings", {})
 	if s is Dictionary:
@@ -304,6 +346,52 @@ func load_game() -> void:
 		less_motion = bool(sd.get("less_motion", false))
 		if sd.has("quality"):
 			quality_high = String(sd["quality"]) == "hoy"
+	# GDD 17.2: 8 h or more away gives the rivals a form for the next round.
+	last_seen = float(d.get("last_seen", 0.0))
+	if last_seen > 0.0:
+		var hours: float = (Time.get_unix_time_from_system() - last_seen) / 3600.0
+		form_shown = league.apply_away(hours, int(last_seen))
+
+
+## Per-track progress and the ladder. Version 1 (the two-world slice) kept
+## one record per world under "worlds" (the toy build: "tracks" = world ids);
+## world N becomes track wN_t1, nothing is dropped.
+func _load_progress(d: Dictionary) -> void:
+	var version: int = int(d.get("version", 1))
+	tracks = {}
+	if version < 2:
+		migrated_from = version
+		var old: Variant = d.get("worlds", d.get("tracks", {}))
+		if old is Dictionary:
+			for wk: Variant in old:
+				var rec: Variant = old[wk]
+				var w: int = int(String(wk))
+				if rec is Dictionary and w >= 1 and w <= RrBalance.WORLD_COUNT:
+					var r2: Dictionary = (rec as Dictionary).duplicate(true)
+					r2["medal"] = RrTracks.medal_for(
+						RrTracks.key(w, 1), float(r2.get("best_time", 0.0))
+					)
+					tracks[RrTracks.key(w, 1)] = r2
+		league = RrLeague.new()
+		_new_seed()
+		return
+	var t: Variant = d.get("tracks", {})
+	tracks = t if t is Dictionary else {}
+	league = RrLeague.new()
+	var lg: Variant = d.get("league", {})
+	if lg is Dictionary:
+		league.from_dict(lg)
+	var pk: Variant = d.get("parked_league", {})
+	parked_league = pk if pk is Dictionary else {}
+	if league.save_seed == 0:
+		_new_seed()
+
+
+## GDD 17.8 save_seed: random once at first launch, on the device only.
+func _new_seed() -> void:
+	var r := RandomNumberGenerator.new()
+	r.randomize()
+	league.save_seed = r.randi_range(1, 2147483646)
 
 
 ## Test hook: forget everything (fresh install).
@@ -311,9 +399,15 @@ func reset_all() -> void:
 	finishes = 0
 	hover_unlocked = false
 	seen_first_swap = false
-	worlds = {}
-	last_world = 1
+	tracks = {}
+	league = RrLeague.new()
+	parked_league = {}
+	_new_seed()
+	cosmetics = {"outfit": 1, "bike": 1, "board": 1, "owned": []}
+	full_unlock = true
 	first_launch = true
+	form_shown = false
+	migrated_from = 0
 	_free_card_sent = false
 
 
