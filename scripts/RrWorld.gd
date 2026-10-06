@@ -1,21 +1,19 @@
 class_name RrWorld
 extends Node3D
 
-## The 3D scene (DESIGN 6-7): sky, fog and sun, the baked static chunks of
-## track 1, the track kit (pads, kickers, hay, swap gates, finish arch), the
-## six racers and the ghost, the chase camera and a small particle pool.
-## It only draws; RrMain owns the RrRace and calls sync() and the fx_* calls.
+## The 3D scene of one world (DESIGN 6-10): HDRI sky, matching sun, depth
+## fog, the baked ground and props, the track kit, the hindrances, the six
+## racers and the ghost, weather, a dust pool and the chase camera. It only
+## draws; RrMain owns the RrRace and calls sync() and the fx_* calls. One
+## RrWorld per race: switching worlds builds a new one.
 
-const SKY_TOP := Color(0.310, 0.663, 0.910)
-const HORIZON := Color(0.839, 0.933, 0.984)
-const AMBIENT := Color(0.749, 0.867, 0.949)
-const SUN_COL := Color(1.0, 0.941, 0.824)
-const SUN := Color(1.0, 0.824, 0.247)
-const BAKED_PATH := "res://assets/generated/track1_world.res"
+const GHOST_TINT := Color(0.86, 0.94, 1.0)
 
 var track: RrTrack
+var look: Dictionary = {}
 var camera: Camera3D
 var env: Environment
+var sun: DirectionalLight3D
 var views: Array[RrRiderView] = []
 var ghost_view: RrRiderView
 var less_motion: bool = false
@@ -23,31 +21,32 @@ var gates_live: bool = false
 ## Build time of the static world (ms) and whether it came from the bake.
 var world_ms: int = 0
 var world_baked: bool = false
-
 ## Graphics features in use (Høy = all on, Lav = all off), see apply_quality.
 var features: Dictionary = {}
+## Ghost opacity this frame (0 = hidden), for tests.
+var ghost_alpha: float = 0.0
+## Test hook: leave the camera where a test put it.
+var hold_camera: bool = false
+## Dust, flakes, stones, contact quads, board glow and weather.
+var fx: RrWorldFx
 
-var _key: DirectionalLight3D
-var _psm: ProceduralSkyMaterial
+var _sky: Sky
+var _terrain_mat: ShaderMaterial
+var _terrain_far_mat: ShaderMaterial
+var _lane_mat: ShaderMaterial
 var _pad_mat: ShaderMaterial
-var _trail_mat: StandardMaterial3D
-var _casters: Array[GeometryInstance3D] = []
-var _wheel_dust: GPUParticles3D
-var _streaks: GPUParticles3D
-var _kit_shader: Shader
-var _palette: Texture2D
-var _kit_mat: ShaderMaterial
+var _gate_mats: Array[ShaderMaterial] = []
+var _gate_run: PackedFloat32Array = PackedFloat32Array([9.0, 9.0])
+var _ghost_mat: StandardMaterial3D
 var _pads: MultiMeshInstance3D
 var _pad_flare: PackedFloat32Array = PackedFloat32Array()
-var _bales: Array[MeshInstance3D] = []
-var _curtains: Array[MeshInstance3D] = []
-var _curtain_t: PackedFloat32Array = PackedFloat32Array([9.0, 9.0])
-var _sky_rig: Node3D
-var _clouds: MeshInstance3D
-var _fx: Dictionary = {}
-var _trail: MeshInstance3D
-var _trail_mesh: ImmediateMesh
-var _trail_pts: Array[Vector3] = []
+var _hay: MultiMeshInstance3D
+var _hay_xf: Array[Transform3D] = []
+var _weeds: MultiMeshInstance3D
+var _veg: Array = []
+var _casters: Array[GeometryInstance3D] = []
+var _near_trees: Array[MultiMeshInstance3D] = []
+var _cast_t: float = 0.0
 
 # Camera state
 var _cam_mode: String = "chase"
@@ -66,84 +65,6 @@ var _rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
 	_rng.seed = 5
-	_kit_shader = load("res://shaders/rr_kit.gdshader")
-	_palette = load("res://assets/textures/rr_palette.png")
-	_kit_mat = ShaderMaterial.new()
-	_kit_mat.shader = _kit_shader
-	_kit_mat.set_shader_parameter("palette", _palette)
-	_build_environment()
-	_build_camera()
-
-
-func setup(trk: RrTrack) -> void:
-	track = trk
-	var path := Path3D.new()
-	path.name = "CentreLine"
-	path.curve = track.make_curve()
-	add_child(path)
-	_build_static()
-	_build_kit()
-	_build_far()
-	_build_fx()
-
-
-# ---------------------------------------------------------------- build
-
-
-func _build_environment() -> void:
-	env = Environment.new()
-	env.background_mode = Environment.BG_SKY
-	var sky := Sky.new()
-	var psm := ProceduralSkyMaterial.new()
-	psm.sky_top_color = SKY_TOP
-	psm.sky_horizon_color = HORIZON
-	psm.sky_curve = 0.12
-	psm.ground_bottom_color = HORIZON
-	psm.ground_horizon_color = HORIZON
-	psm.sun_angle_max = 0.0
-	psm.sun_curve = 0.0
-	sky.sky_material = psm
-	_psm = psm
-	sky.radiance_size = Sky.RADIANCE_SIZE_32
-	sky.process_mode = Sky.PROCESS_MODE_QUALITY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = AMBIENT
-	env.ambient_light_energy = 0.6
-	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
-	env.tonemap_exposure = 1.0
-	env.glow_enabled = false
-	env.ssao_enabled = false
-	env.fog_enabled = true
-	env.fog_mode = Environment.FOG_MODE_DEPTH
-	env.fog_light_color = HORIZON
-	env.fog_light_energy = 1.0
-	env.fog_density = 0.7
-	env.fog_depth_begin = RrBalance.FOG_BEGIN
-	env.fog_depth_end = RrBalance.FOG_END
-	env.fog_depth_curve = 1.0
-	env.fog_sky_affect = 0.0
-	env.fog_sun_scatter = 0.0
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-	var key := DirectionalLight3D.new()
-	_key = key
-	key.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
-	key.directional_shadow_max_distance = 45.0
-	key.shadow_bias = 0.06
-	key.shadow_normal_bias = 1.2
-	key.shadow_blur = 1.5
-	key.light_color = SUN_COL
-	key.light_energy = 1.0
-	key.shadow_enabled = false
-	key.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
-	key.rotation_degrees = Vector3(-48.6, -26.6, 0.0)
-	add_child(key)
-
-
-func _build_camera() -> void:
 	camera = Camera3D.new()
 	camera.fov = RrBalance.CAM_FOV
 	camera.keep_aspect = Camera3D.KEEP_HEIGHT
@@ -153,130 +74,240 @@ func _build_camera() -> void:
 	add_child(camera)
 
 
+func setup(trk: RrTrack) -> void:
+	track = trk
+	look = trk.look
+	var path := Path3D.new()
+	path.name = "CentreLine"
+	path.curve = track.make_curve()
+	add_child(path)
+	_build_environment()
+	_build_static()
+	_build_kit()
+	fx = RrWorldFx.new()
+	add_child(fx)
+	fx.setup(track)
+
+
+# ---------------------------------------------------------------- build
+
+
+func _build_environment() -> void:
+	env = Environment.new()
+	env.background_mode = Environment.BG_SKY
+	_sky = Sky.new()
+	var pm := PanoramaSkyMaterial.new()
+	pm.panorama = load(String(look["sky"]))
+	pm.energy_multiplier = 1.0
+	_sky.sky_material = pm
+	_sky.radiance_size = Sky.RADIANCE_SIZE_256
+	_sky.process_mode = Sky.PROCESS_MODE_AUTOMATIC
+	env.sky = _sky
+	env.sky_rotation = Vector3(0.0, deg_to_rad(float(look["sky_yaw"])), 0.0)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_energy = 1.0
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	# AgX: matches the approved Blender AgX mocks better than ACES (side by
+	# side on the real build: ACES pushed the pine-needle verge to orange).
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env.tonemap_exposure = 1.0
+	env.tonemap_white = 6.0
+	env.ssao_enabled = false
+	env.fog_enabled = true
+	env.fog_mode = Environment.FOG_MODE_DEPTH
+	env.fog_light_color = look["fog_color"]
+	env.fog_light_energy = 1.0
+	env.fog_density = float(look["fog_max"])
+	env.fog_depth_begin = float(look["fog_begin"])
+	env.fog_depth_end = float(look["fog_end"])
+	env.fog_depth_curve = 1.0
+	env.fog_sky_affect = 0.12
+	env.fog_sun_scatter = 0.0
+	env.glow_enabled = false
+	var we := WorldEnvironment.new()
+	we.environment = env
+	add_child(we)
+	sun = DirectionalLight3D.new()
+	sun.rotation_degrees = look["sun_rot"]
+	sun.light_color = look["sun_color"]
+	sun.light_energy = float(look["sun_energy"])
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.directional_shadow_max_distance = 60.0
+	sun.directional_shadow_split_1 = 0.22
+	sun.shadow_bias = 0.04
+	sun.shadow_normal_bias = 1.0
+	sun.shadow_blur = 1.5
+	sun.shadow_enabled = true
+	sun.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
+	add_child(sun)
+
+
+## Terrain material per world (DESIGN 9 / 10 layer tables).
+func _terrain_material() -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/rr_terrain.gdshader")
+	var w: int = track.world_id
+	var d: String = "res://assets/textures/world%d/" % w
+	var layers: Dictionary
+	if w == 2:
+		layers = {
+			"trail": "terrain_red_laterite_soil_stones",
+			"base": "terrain_red_sand",
+			"rock": "terrain_cliff_side",
+			"verge": "terrain_red_sand",
+			"patch": "terrain_red_sand",
+		}
+		m.set_shader_parameter("rock_tile", 9.0)
+		m.set_shader_parameter("base_tile", 3.5)
+		m.set_shader_parameter("verge_tile", 6.0)
+		m.set_shader_parameter("line_dark", 0.10)
+	else:
+		m.set_shader_parameter("verge_tint", Vector3(0.72, 0.66, 0.6))
+		layers = {
+			"trail": "terrain_rocky_trail_02",
+			"base": "terrain_forest_ground_04",
+			"rock": "terrain_rocky_trail",
+			"verge": "terrain_forest_leaves_04",
+			"patch": "terrain_sparse_grass",
+		}
+	m.set_shader_parameter("trail_alb", load(d + layers["trail"] + "_albedo.jpg"))
+	m.set_shader_parameter("trail_nrm", load(d + layers["trail"] + "_normal.jpg"))
+	m.set_shader_parameter("trail_arm", load(d + layers["trail"] + "_arm.jpg"))
+	m.set_shader_parameter("base_alb", load(d + layers["base"] + "_albedo.jpg"))
+	m.set_shader_parameter("base_nrm", load(d + layers["base"] + "_normal.jpg"))
+	m.set_shader_parameter("base_arm", load(d + layers["base"] + "_arm.jpg"))
+	m.set_shader_parameter("rock_alb", load(d + layers["rock"] + "_albedo.jpg"))
+	m.set_shader_parameter("rock_nrm", load(d + layers["rock"] + "_normal.jpg"))
+	m.set_shader_parameter("verge_alb", load(d + layers["verge"] + "_albedo.jpg"))
+	m.set_shader_parameter("patch_alb", load(d + layers["patch"] + "_albedo.jpg"))
+	return m
+
+
+func _lane_material() -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/rr_lane.gdshader")
+	var w: int = track.world_id
+	var base: String
+	if w == 2:
+		base = "res://assets/textures/world2/terrain_worn_asphalt"
+		m.set_shader_parameter("tile", 4.0)
+		m.set_shader_parameter("edge_line", 1.0)
+	else:
+		base = "res://assets/textures/world1/terrain_gravel_floor_02"
+		m.set_shader_parameter("tile", 2.5)
+	m.set_shader_parameter("alb", load(base + "_albedo.jpg"))
+	m.set_shader_parameter("nrm", load(base + "_normal.jpg"))
+	m.set_shader_parameter("arm", load(base + "_arm.jpg"))
+	return m
+
+
 func _build_static() -> void:
 	var t0: int = Time.get_ticks_msec()
-	var list: Array = []
-	if ResourceLoader.exists(BAKED_PATH):
-		var baked: Resource = load(BAKED_PATH)
+	var data: Dictionary = {}
+	var path: String = RrWorldBake.path_for(track.world_id)
+	if ResourceLoader.exists(path):
+		var baked: Resource = load(path)
 		if baked != null and int(baked.get_meta(&"version", -1)) == RrWorldBake.VERSION:
-			list = baked.get_meta(&"chunks", [])
+			data = baked.get_meta(&"world", {})
 			world_baked = true
-	if list.is_empty():
+	if data.is_empty():
 		var gen := RrWorldGen.new()
 		gen.build(track)
-		list = gen.meshes()
-	for e: Array in list:
+		data = gen.result()
+	_terrain_mat = _terrain_material()
+	# The far grid sits 60 m+ away under the fog: no normal maps, no patches.
+	_terrain_far_mat = _terrain_mat.duplicate()
+	_terrain_far_mat.set_shader_parameter("use_normals", false)
+	_terrain_far_mat.set_shader_parameter("cheap", true)
+	for e: Array in data["ground"]:
 		var mi := MeshInstance3D.new()
 		mi.mesh = e[0]
-		mi.material_override = _kit_mat
+		mi.material_override = _terrain_far_mat if e.size() > 3 and bool(e[3]) else _terrain_mat
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var near: bool = e[2]
-		mi.visibility_range_end = 330.0 if near else 470.0
 		add_child(mi)
+	_lane_mat = _lane_material()
+	for e: Array in data["lanes"]:
+		var ml := MeshInstance3D.new()
+		ml.mesh = e[0]
+		ml.material_override = _lane_mat
+		ml.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ml.visibility_range_end = 420.0
+		add_child(ml)
+	for e: Array in data["water"]:
+		var mw := MeshInstance3D.new()
+		mw.mesh = e[0]
+		var wm := StandardMaterial3D.new()
+		wm.albedo_color = Color(0.05, 0.08, 0.07)
+		wm.roughness = 0.06
+		wm.metallic_specular = 0.7
+		wm.normal_enabled = true
+		wm.normal_texture = load("res://assets/textures/world1/terrain_gravel_floor_02_normal.jpg")
+		wm.normal_scale = 0.15
+		wm.uv1_triplanar = true
+		wm.uv1_scale = Vector3(0.08, 0.08, 0.08)
+		mw.material_override = wm
+		mw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mw)
+	var protos: Dictionary = {}
+	for e: Array in data["props"]:
+		var kind: String = e[0]
+		var model: String = kind.trim_prefix("near_").trim_prefix("far_").trim_prefix("srock_")
+		if not protos.has(model):
+			protos[model] = glb_mesh(model)
+		var buf: PackedFloat32Array = e[1]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = protos[model]
+		mm.instance_count = buf.size() / 12
+		mm.buffer = buf
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		var mat: Material = RrMats.for_mesh(mm.mesh)
+		if kind.begins_with("srock_"):
+			mat = sandstone(mat as StandardMaterial3D)
+		mmi.material_override = mat
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end_margin = 10.0
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		add_child(mmi)
+		_veg.append([kind, mmi])
+		if kind.begins_with("near_"):
+			_near_trees.append(mmi)
+		elif model.begins_with("rock") or model in ["dead_trunk", "fence_rail"]:
+			_casters.append(mmi)
 	world_ms = Time.get_ticks_msec() - t0
 
 
-func _glb_mesh(name: String) -> Mesh:
+## DESIGN 10: the grey rock scans multiplied to sandstone.
+static func sandstone(base: StandardMaterial3D) -> StandardMaterial3D:
+	var m: StandardMaterial3D = base.duplicate()
+	m.albedo_color = Color(1.25, 0.62, 0.42)
+	return m
+
+
+static func glb_mesh(name: String) -> Mesh:
 	var root: Node = (load("res://assets/models/%s.glb" % name) as PackedScene).instantiate()
 	var mi: MeshInstance3D = root.find_children("*", "MeshInstance3D", true, false)[0]
-	var m: Mesh = mi.mesh
+	var m: Mesh = RrMats.uv_fixed(mi.mesh)
 	root.free()
 	return m
 
 
-func _glb_node(name: String, xf: Transform3D) -> Node3D:
-	var n: Node3D = (load("res://assets/models/%s.glb" % name) as PackedScene).instantiate()
-	for mi: Node in n.find_children("*", "MeshInstance3D", true, false):
-		(mi as MeshInstance3D).material_override = _kit_mat
-		(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	n.transform = xf
-	add_child(n)
-	for mi: Node in n.find_children("*", "MeshInstance3D", true, false):
-		_casters.append(mi as GeometryInstance3D)
-	return n
+func _mesh_node(name: String, xf: Transform3D, cast: bool) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = glb_mesh(name)
+	mi.material_override = RrMats.for_mesh(mi.mesh)
+	mi.transform = xf
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	if cast:
+		_casters.append(mi)
+	return mi
 
 
 ## Flat frame at s (yaw only), origin at lateral x and height h.
 func _flat(s: float, x: float, h: float = 0.0) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, track.yaw(s)), track.world_point(s, x, h))
-
-
-func _build_kit() -> void:
-	# Speed pads: one MultiMesh, 3 x 4 m each, flare in the custom data.
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_custom_data = true
-	mm.mesh = _glb_mesh("boost_pad")
-	mm.instance_count = RrTrack.PADS.size()
-	for i: int in RrTrack.PADS.size():
-		var pad: Array = RrTrack.PADS[i]
-		var xf: Transform3D = _slope_frame(float(pad[0]), float(pad[1]), 0.04)
-		xf.basis = xf.basis.scaled(Vector3(RrBalance.PAD_W_M / 2.5, 1.0, RrBalance.PAD_L_M / 2.1))
-		mm.set_instance_transform(i, xf)
-		mm.set_instance_custom_data(i, Color(0, 0, 0, 0))
-	_pad_flare.resize(RrTrack.PADS.size())
-	_pad_flare.fill(0.0)
-	_pads = MultiMeshInstance3D.new()
-	_pads.multimesh = mm
-	var pm := ShaderMaterial.new()
-	_pad_mat = pm
-	pm.shader = load("res://shaders/rr_pad.gdshader")
-	pm.set_shader_parameter("palette", _palette)
-	_pads.material_override = pm
-	_pads.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_pads)
-	# Kickers: ramp.glb stretched across the full width, lip at the kicker s.
-	var rm := MultiMesh.new()
-	rm.transform_format = MultiMesh.TRANSFORM_3D
-	rm.mesh = _glb_mesh("ramp")
-	rm.instance_count = RrTrack.KICKERS.size()
-	for i: int in RrTrack.KICKERS.size():
-		var s0: float = RrTrack.KICKERS[i] - RrBalance.KICKER_LEN_M
-		var xf2: Transform3D = _slope_frame(s0, 0.0, 0.0)
-		xf2.basis = xf2.basis.scaled(Vector3((track.width(s0) + 0.6) / 4.6, 1.0, 1.0))
-		rm.set_instance_transform(i, xf2)
-	var ramps := MultiMeshInstance3D.new()
-	ramps.multimesh = rm
-	ramps.material_override = _kit_mat
-	ramps.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(ramps)
-	_casters.append(ramps)
-	# Hay bales.
-	var bale: ArrayMesh = _bale_mesh()
-	for h: Array in RrTrack.HAY:
-		var mi := MeshInstance3D.new()
-		mi.mesh = bale
-		mi.material_override = _kit_mat
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mi.transform = _flat(float(h[0]), float(h[1]), 0.0)
-		add_child(mi)
-		_bales.append(mi)
-		_casters.append(mi)
-	# Swap gates: G1 turns bikes into boards (board sign), G2 back (bike sign).
-	for g: int in RrTrack.GATES.size():
-		var gate: Array = RrTrack.GATES[g]
-		var gs: float = gate[0]
-		var model: String = "swap_gate_board" if int(gate[1]) == RrRider.BOARD else "swap_gate_bike"
-		var xf3: Transform3D = _flat(gs, 0.0, 0.0)
-		var wide: float = (track.width(gs) + 1.2) / 9.0
-		xf3.basis = xf3.basis.scaled(Vector3(wide, 1.0, 1.0))
-		_glb_node(model, xf3)
-		var cur := MeshInstance3D.new()
-		var q := QuadMesh.new()
-		q.size = Vector2(9.0 * wide * 0.86, 5.4 if int(gate[1]) == RrRider.BOARD else 6.6)
-		cur.mesh = q
-		var cm := ShaderMaterial.new()
-		cm.shader = load("res://shaders/rr_curtain.gdshader")
-		cur.material_override = cm
-		cur.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		cur.transform = _flat(gs, 0.0, q.size.y * 0.5)
-		cur.visible = false
-		add_child(cur)
-		_curtains.append(cur)
-	# Finish arch at the line.
-	var fx: Transform3D = _flat(track.length, 0.0, 0.0)
-	fx.basis = fx.basis.scaled(Vector3((track.width(track.length) + 1.0) / 11.1, 1.0, 1.0))
-	_glb_node("finish_arch", fx)
 
 
 ## Frame at s that follows the slope (pads and ramps sit on the surface).
@@ -286,210 +317,170 @@ func _slope_frame(s: float, x: float, h: float) -> Transform3D:
 	return f
 
 
-func _bale_mesh() -> ArrayMesh:
-	var mb := RrMeshBuilder.new()
-	var sides: int = 10
-	var r: float = 0.5
-	var half: float = 0.8
-	for k: int in sides:
-		var a0: float = TAU * float(k) / float(sides)
-		var a1: float = TAU * float(k + 1) / float(sides)
-		var p0 := Vector3(0.0, r + sin(a0) * r, cos(a0) * r)
-		var p1 := Vector3(0.0, r + sin(a1) * r, cos(a1) * r)
-		var out: Vector3 = ((p0 + p1) * 0.5 - Vector3(0, r, 0)).normalized()
-		mb.quad_out(
-			p0 + Vector3(-half, 0, 0),
-			p1 + Vector3(-half, 0, 0),
-			p1 + Vector3(half, 0, 0),
-			p0 + Vector3(half, 0, 0),
-			"pebble" if k % 3 != 0 else "dirt_mid",
-			out
-		)
-		for sx: float in [-half, half]:
-			mb.tri_out(
-				Vector3(sx, r, 0),
-				p0 + Vector3(sx, 0, 0),
-				p1 + Vector3(sx, 0, 0),
-				"wood",
-				Vector3(sx, 0, 0)
+func _glow_material(prefix: String, instanced: bool) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/rr_glow_kit.gdshader")
+	var d: String = "res://assets/textures/kit/" + prefix
+	m.set_shader_parameter("alb", load(d + "_albedo.png"))
+	m.set_shader_parameter("nrm", load(d + "_normal.png"))
+	m.set_shader_parameter("orm", load(d + "_orm.png"))
+	m.set_shader_parameter("emi", load(d + "_emission.png"))
+	m.set_shader_parameter("instanced", instanced)
+	return m
+
+
+static func multi(
+	parent: Node, mesh: Mesh, xfs: Array[Transform3D], mat: Material, custom: bool = false
+) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = custom
+	mm.mesh = mesh
+	mm.instance_count = xfs.size()
+	for i: int in xfs.size():
+		mm.set_instance_transform(i, xfs[i])
+		if custom:
+			mm.set_instance_custom_data(i, Color(0, 0, 0, 0))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mmi)
+	return mmi
+
+
+func _build_kit() -> void:
+	# Speed pads: one MultiMesh, flare per pad in the custom data.
+	var pad_xf: Array[Transform3D] = []
+	for pad: Array in track.pads:
+		pad_xf.append(_slope_frame(float(pad[0]), float(pad[1]), 0.02))
+	_pad_mat = _glow_material("boost_pad", true)
+	_pads = multi(self, glb_mesh("boost_pad"), pad_xf, _pad_mat, true)
+	_pad_flare.resize(track.pads.size())
+	_pad_flare.fill(0.0)
+	# Kickers: deck centred KICKER_LEN_M / 2 before the lip, across the width.
+	var by_model: Dictionary = {}
+	for i: int in track.kickers.size():
+		var model: String = track.kicker_models[i]
+		var mesh: Mesh = glb_mesh(model)
+		var sc: float = mesh.get_aabb().size.x
+		var sm: float = track.kickers[i] - RrBalance.KICKER_LEN_M * 0.5
+		var xf: Transform3D = _slope_frame(sm, 0.0, 0.0)
+		xf.basis = xf.basis.scaled(Vector3((track.width(sm) + 0.8) / sc, 1.0, 1.0))
+		if not by_model.has(model):
+			by_model[model] = [mesh, [] as Array[Transform3D]]
+		(by_model[model][1] as Array[Transform3D]).append(xf)
+	for model: String in by_model:
+		var e: Array = by_model[model]
+		var mesh2: Mesh = e[0]
+		var ramps: MultiMeshInstance3D = multi(self, mesh2, e[1], RrMats.for_mesh(mesh2))
+		_casters.append(ramps)
+	# Hay bales (W1 Block): one MultiMesh, a burst bale is scaled to zero.
+	if not track.blocks.is_empty():
+		_hay_xf.clear()
+		for b: Array in track.blocks:
+			_hay_xf.append(_flat(float(b[0]), float(b[1]), 0.0))
+		var hm: Mesh = glb_mesh("hay_bale")
+		_hay = multi(self, hm, _hay_xf, RrMats.for_mesh(hm))
+		_casters.append(_hay)
+	# Patches: mud puddles (W1), sand drifts (W2), stretched to the patch rect.
+	var patch_xf: Dictionary = {}
+	for p: Array in track.patches:
+		var kind: String = p[4]
+		var model3: String = "mud_puddle" if kind == "mud" else "sand_drift"
+		var s0: float = p[0]
+		var s1: float = p[1]
+		var x0: float = p[2]
+		var x1: float = p[3]
+		var xf3: Transform3D = _slope_frame((s0 + s1) * 0.5, (x0 + x1) * 0.5, 0.01)
+		if model3 == "mud_puddle":
+			xf3.basis = xf3.basis.scaled(
+				Vector3((x1 - x0) * 1.35 / 5.6, 1.0, (s1 - s0) * 1.3 / 11.2)
 			)
-	return mb.commit()
-
-
-## Mountains and clouds ride with the camera (they read as infinitely far).
-func _build_far() -> void:
-	_sky_rig = Node3D.new()
-	add_child(_sky_rig)
-	var far := ShaderMaterial.new()
-	far.shader = load("res://shaders/rr_far.gdshader")
-	far.set_shader_parameter("palette", _palette)
-	far.set_shader_parameter("haze", 0.45)
-	var mb := RrMeshBuilder.new()
-	for i: int in 12:
-		var ang: float = TAU * float(i) / 12.0 + _rng.randf_range(-0.15, 0.15)
-		var dist: float = _rng.randf_range(330.0, 400.0)
-		var c := Vector3(sin(ang) * dist, -60.0, cos(ang) * dist)
-		var h: float = _rng.randf_range(95.0, 150.0)
-		var rad: float = _rng.randf_range(80.0, 120.0)
-		_mountain(mb, c, h, rad, i)
-	var mtn := MeshInstance3D.new()
-	mtn.mesh = mb.commit()
-	mtn.material_override = far
-	mtn.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_sky_rig.add_child(mtn)
-	var cloud_mat := ShaderMaterial.new()
-	cloud_mat.shader = far.shader
-	cloud_mat.set_shader_parameter("palette", _palette)
-	cloud_mat.set_shader_parameter("haze", 0.0)
-	var cb := RrMeshBuilder.new()
-	for i: int in 26:
-		var ang2: float = TAU * float(i) / 26.0 + _rng.randf_range(-0.12, 0.12)
-		var dist2: float = _rng.randf_range(120.0, 240.0)
-		var c2 := Vector3(sin(ang2) * dist2, _rng.randf_range(16.0, 58.0), cos(ang2) * dist2)
-		var sc: float = _rng.randf_range(3.0, 5.5)
-		for k: int in _rng.randi_range(4, 6):
-			var o := Vector3(_rng.randf_range(-2.2, 2.2), _rng.randf_range(-0.3, 0.6), 0.0) * sc
-			o.z = _rng.randf_range(-1.0, 1.0) * sc
-			var rr: float = _rng.randf_range(1.0, 1.7) * sc
-			cb.ico(c2 + o, Vector3(rr, rr * 0.75, rr), "cloud", 1, "cloud_shade")
-	_clouds = MeshInstance3D.new()
-	_clouds.mesh = cb.commit()
-	_clouds.material_override = cloud_mat
-	_clouds.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_sky_rig.add_child(_clouds)
-
-
-func _mountain(mb: RrMeshBuilder, c: Vector3, h: float, r: float, seed_i: int) -> void:
-	var n: int = 7
-	var top := c + Vector3(0.0, h, 0.0)
-	var mid: Array[Vector3] = []
-	var base: Array[Vector3] = []
-	for k: int in n:
-		var a: float = TAU * float(k) / float(n) + float(seed_i)
-		var rk: float = r * (0.8 + 0.4 * absf(sin(float(k * 7 + seed_i))))
-		base.append(c + Vector3(cos(a) * rk, 0.0, sin(a) * rk))
-		mid.append(c + Vector3(cos(a) * rk * 0.32, h * 0.68, sin(a) * rk * 0.32))
-	for k: int in n:
-		var k2: int = (k + 1) % n
-		var out := Vector3(
-			base[k].x + base[k2].x - 2.0 * c.x, 0.0, base[k].z + base[k2].z - 2.0 * c.z
-		)
-		mb.quad_out(base[k], base[k2], mid[k2], mid[k], "mountain", out + Vector3.UP * r * 0.3)
-		mb.tri_out(mid[k], mid[k2], top, "snow", out + Vector3.UP * r)
-
-
-func _build_fx() -> void:
-	_fx["dust"] = _emitter(10, 0.55, Color(0.827, 0.604, 0.388), 0.22, 2.0)
-	_fx["sparkle"] = _emitter(12, 0.45, Color(1.0, 0.902, 0.502), 0.12, 3.5)
-	_fx["straw"] = _emitter(20, 0.6, Color(0.902, 0.827, 0.722), 0.14, 4.0)
-	_fx["puff"] = _emitter(16, 0.35, Color(1, 1, 1), 0.35, 5.0)
-	_fx["confetti"] = _emitter(36, 1.8, Color(1, 1, 1), 0.14, 6.0)
-	var conf: CPUParticles3D = _fx["confetti"]
-	var g := Gradient.new()
-	g.offsets = PackedFloat32Array([0.0, 0.25, 0.5, 0.75, 1.0])
-	g.colors = PackedColorArray(
-		[
-			Color(0.949, 0.329, 0.239),
-			Color(1.0, 0.824, 0.247),
-			Color(0.243, 0.608, 0.859),
-			Color(0.071, 0.627, 0.561),
-			Color(1, 1, 1)
+		else:
+			xf3.basis = (xf3.basis * Basis(Vector3.UP, PI * 0.5)).scaled(
+				Vector3((s1 - s0) * 1.25 / 15.0, 1.0, (x1 - x0) * 1.3 / 4.0)
+			)
+		if not patch_xf.has(model3):
+			patch_xf[model3] = [] as Array[Transform3D]
+		(patch_xf[model3] as Array[Transform3D]).append(xf3)
+	for model4: String in patch_xf:
+		var pm: Mesh = glb_mesh(model4)
+		multi(self, pm, patch_xf[model4], RrMats.for_mesh(pm))
+	# Tumbleweeds (W2 Roller): one MultiMesh, posed every frame.
+	if not track.rollers.is_empty():
+		var hidden: Array[Transform3D] = []
+		for i: int in track.rollers.size():
+			hidden.append(Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
+		var tw: Mesh = glb_mesh("tumbleweed")
+		_weeds = multi(self, tw, hidden, RrMats.for_mesh(tw))
+		_weeds.custom_aabb = AABB(Vector3(-5000, -2000, -5000), Vector3(10000, 4000, 10000))
+		_casters.append(_weeds)
+	# Swap gates: 11.2 m truss arch; LEDs dormant until the hoverboard unlocks.
+	var gm: Mesh = glb_mesh("swap_gate")
+	for g: int in track.gates.size():
+		var gs: float = track.gates[g][0]
+		var xf4: Transform3D = _flat(gs, 0.0, 0.0)
+		var span: float = track.width(gs) + 1.0
+		if span > 11.2:
+			xf4.basis = xf4.basis.scaled(Vector3(span / 11.2, 1.0, 1.0))
+		var mi := MeshInstance3D.new()
+		mi.mesh = gm
+		var mat: ShaderMaterial = _glow_material("swap_gate", false)
+		mat.set_shader_parameter("energy", 0.0)
+		mi.material_override = mat
+		mi.transform = xf4
+		add_child(mi)
+		_casters.append(mi)
+		_gate_mats.append(mat)
+	# Finish arch at the line (13.6 m truss), a chequered line on the ground.
+	_mesh_node("finish_arch", _flat(track.length, 0.0, 0.0), true)
+	_finish_line()
+	if track.world_id == 2:
+		var towers: Array[Transform3D] = [
+			_flat(-12.0, -12.5, 0.0), _flat(track.length + 8.0, 13.5, 0.0)
 		]
-	)
-	conf.color_initial_ramp = g
-	conf.gravity = Vector3(0, -4.0, 0)
-	_trail_mesh = ImmediateMesh.new()
-	_trail = MeshInstance3D.new()
-	_trail.mesh = _trail_mesh
-	var tm := StandardMaterial3D.new()
-	_trail_mat = tm
-	tm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	tm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	tm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	tm.vertex_color_use_as_albedo = true
-	tm.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_trail.material_override = tm
-	_trail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_trail)
-	_build_gpu_fx()
+		for i: int in towers.size():
+			var s2: float = -12.0 if i == 0 else track.length + 8.0
+			var x2: float = -12.5 if i == 0 else 13.5
+			towers[i].origin.y = track.center(s2).y + _ground_lift(s2, x2)
+		var tm: Mesh = glb_mesh("water_tower")
+		_casters.append(multi(self, tm, towers, RrMats.for_mesh(tm)))
 
 
-## Høy tier GPU particles: dust off the player's back wheel and 3D speed
-## streaks around the view axis while boosting.
-func _build_gpu_fx() -> void:
-	_wheel_dust = GPUParticles3D.new()
-	_wheel_dust.amount = 28
-	_wheel_dust.lifetime = 0.7
-	_wheel_dust.local_coords = false
-	var pm := ParticleProcessMaterial.new()
-	pm.direction = Vector3(0, 1, 0.6)
-	pm.spread = 35.0
-	pm.initial_velocity_min = 0.6
-	pm.initial_velocity_max = 1.8
-	pm.gravity = Vector3(0, -0.6, 0)
-	pm.scale_min = 0.6
-	pm.scale_max = 1.4
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(0.25, 0.05, 0.2)
-	var fade := Gradient.new()
-	fade.set_color(0, Color(1, 1, 1, 0.55))
-	fade.set_color(1, Color(1, 1, 1, 0.0))
-	var ft := GradientTexture1D.new()
-	ft.gradient = fade
-	pm.color_ramp = ft
-	pm.color = Color(0.83, 0.65, 0.45)
-	_wheel_dust.process_material = pm
-	var q := QuadMesh.new()
-	q.size = Vector2(0.38, 0.38)
+## Small lift so a landmark beside the track stands on the ground.
+func _ground_lift(_s: float, x: float) -> float:
+	return clampf((absf(x) - 6.0) * 0.03, 0.0, 0.6)
+
+
+func _finish_line() -> void:
+	var img := Image.create(12, 2, false, Image.FORMAT_RGB8)
+	for y: int in 2:
+		for x: int in 12:
+			var dark: bool = (x + y) % 2 == 0
+			img.set_pixel(x, y, Color(0.08, 0.09, 0.11) if dark else Color(0.92, 0.92, 0.92))
 	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.vertex_color_use_as_albedo = true
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.albedo_texture = RrRiderView.radial_texture(Color(1, 1, 1, 1))
-	q.material = m
-	_wheel_dust.draw_pass_1 = q
-	_wheel_dust.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_wheel_dust.emitting = false
-	add_child(_wheel_dust)
-	_streaks = GPUParticles3D.new()
-	_streaks.amount = 40
-	_streaks.lifetime = 0.35
-	_streaks.local_coords = true
-	var sp := ParticleProcessMaterial.new()
-	sp.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-	sp.emission_ring_axis = Vector3(0, 0, 1)
-	sp.emission_ring_radius = 3.2
-	sp.emission_ring_inner_radius = 2.0
-	sp.emission_ring_height = 2.0
-	sp.direction = Vector3(0, 0, 1)
-	sp.spread = 0.0
-	sp.initial_velocity_min = 38.0
-	sp.initial_velocity_max = 48.0
-	sp.gravity = Vector3.ZERO
-	sp.particle_flag_align_y = true
-	_streaks.process_material = sp
-	var line := BoxMesh.new()
-	line.size = Vector3(0.025, 1.8, 0.025)
-	var lm := StandardMaterial3D.new()
-	lm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	lm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	lm.albedo_color = Color(1, 1, 1, RrBalance.SPEED_LINES_ALPHA_MAX)
-	line.material = lm
-	_streaks.draw_pass_1 = line
-	_streaks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_streaks.emitting = false
-	_streaks.position = Vector3(0, 0, -9.0)
-	camera.add_child(_streaks)
+	m.albedo_texture = ImageTexture.create_from_image(img)
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	m.roughness = 0.8
+	var q := QuadMesh.new()
+	q.orientation = PlaneMesh.FACE_Y
+	q.size = Vector2(track.width(track.length), 2.0)
+	var mi := MeshInstance3D.new()
+	mi.mesh = q
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.transform = _slope_frame(track.length, 0.0, 0.02)
+	add_child(mi)
 
 
-## Graphics tier (owner 2026-10-06): Høy turns on every feature, Lav keeps
-## the DESIGN 7e phone budget (no shadow, no glow, linear tonemap, MSAA off +
-## FXAA, CPU particles and HUD speed lines only). Single features can be
-## switched for the cost probe in tests/capture.gd.
+## Graphics tier (owner): Høy turns every feature on; Lav keeps the 32-bit
+## tablet budget (DESIGN 6, 12): no sun shadow (contact quads instead), no
+## glow, MSAA off + FXAA, radiance 64, normal maps on racers only, grass cut
+## at 15 m, trees fade at 120 m, no ferns, no sun shafts.
 func apply_quality(high: bool) -> void:
 	var f: Dictionary = {}
-	for k: String in ["shadows", "glow", "filmic", "sun", "msaa", "gpu_fx", "rim"]:
+	for k: String in ["shadows", "glow", "msaa", "normals", "veg_far", "shafts"]:
 		f[k] = high
 	apply_features(f)
 
@@ -497,7 +488,7 @@ func apply_quality(high: bool) -> void:
 func apply_features(f: Dictionary) -> void:
 	features = f.duplicate()
 	var shadows: bool = f.get("shadows", false)
-	_key.shadow_enabled = shadows
+	sun.shadow_enabled = shadows
 	var cast: int = (
 		GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		if shadows
@@ -506,37 +497,18 @@ func apply_features(f: Dictionary) -> void:
 	for c: GeometryInstance3D in _casters:
 		c.cast_shadow = cast
 	for v: RrRiderView in views:
-		v.set_high(shadows)
-		v.mat.set_shader_parameter("rim", 0.55 if f.get("rim", false) else 0.0)
+		v.set_shadow(shadows)
+	fx.set_tier(shadows, f.get("shafts", false))
 	var glow: bool = f.get("glow", false)
 	env.glow_enabled = glow
-	env.glow_intensity = 0.7
+	env.glow_intensity = 0.4
 	env.glow_strength = 1.0
 	env.glow_bloom = 0.0
-	env.glow_hdr_threshold = 1.15
-	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+	env.glow_hdr_threshold = 1.2
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	for i: int in 7:
-		env.set_glow_level(i, 1.0 if i in [1, 2, 3] else 0.0)
-	_pad_mat.set_shader_parameter("glow_energy", 3.2 if glow else 1.6)
-	_trail_mat.albedo_color = Color(2.2, 2.2, 2.2) if glow else Color(1, 1, 1)
-	if f.get("filmic", false):
-		env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-		env.tonemap_exposure = 1.32
-		env.tonemap_white = 6.0
-		env.adjustment_enabled = true
-		env.adjustment_saturation = 1.12
-		env.adjustment_contrast = 1.05
-		env.adjustment_brightness = 1.0
-	else:
-		env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
-		env.tonemap_exposure = 1.0
-		env.adjustment_enabled = false
-	var sun: bool = f.get("sun", false)
-	_psm.sun_angle_max = 30.0 if sun else 0.0
-	_psm.sun_curve = 0.15 if sun else 0.0
-	_key.sky_mode = (
-		DirectionalLight3D.SKY_MODE_LIGHT_AND_SKY if sun else DirectionalLight3D.SKY_MODE_LIGHT_ONLY
-	)
+		env.set_glow_level(i, 1.0 if i in [2, 3] else 0.0)
+	_sky.radiance_size = Sky.RADIANCE_SIZE_256 if f.get("msaa", false) else Sky.RADIANCE_SIZE_64
 	var vp: Viewport = get_viewport()
 	if f.get("msaa", false):
 		vp.msaa_3d = Viewport.MSAA_2X
@@ -544,46 +516,68 @@ func apply_features(f: Dictionary) -> void:
 	else:
 		vp.msaa_3d = Viewport.MSAA_DISABLED
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
-	if not f.get("gpu_fx", false):
-		_wheel_dust.emitting = false
-		_streaks.emitting = false
-
-
-func _emitter(n: int, life: float, col: Color, size: float, speed: float) -> CPUParticles3D:
-	var p := CPUParticles3D.new()
-	p.emitting = false
-	p.one_shot = true
-	p.amount = n
-	p.lifetime = life
-	p.explosiveness = 0.95
-	var q := QuadMesh.new()
-	q.size = Vector2(size, size)
-	p.mesh = q
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.vertex_color_use_as_albedo = true
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	p.material_override = m
-	p.color = col
-	var fade := Gradient.new()
-	fade.set_color(0, Color(1, 1, 1, 1))
-	fade.set_color(1, Color(1, 1, 1, 0))
-	p.color_ramp = fade
-	p.direction = Vector3(0, 1, 0)
-	p.spread = 70.0
-	p.initial_velocity_min = speed * 0.5
-	p.initial_velocity_max = speed
-	p.gravity = Vector3(0, -6.0, 0)
-	p.scale_amount_min = 0.6
-	p.scale_amount_max = 1.2
-	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	p.local_coords = false
-	add_child(p)
-	return p
+	var normals: bool = f.get("normals", false)
+	RrMats.set_quality(normals)
+	for m: ShaderMaterial in [_terrain_mat, _lane_mat, _pad_mat]:
+		m.set_shader_parameter("use_normals", normals)
+	for gm: ShaderMaterial in _gate_mats:
+		gm.set_shader_parameter("use_normals", normals)
+	var far: bool = f.get("veg_far", false)
+	for e: Array in _veg:
+		var kind: String = e[0]
+		var mmi: MultiMeshInstance3D = e[1]
+		var end: float = 0.0
+		if kind.begins_with("near_"):
+			end = 170.0 if far else 120.0
+		elif kind.begins_with("far_"):
+			end = 260.0 if far else 0.0
+			mmi.visible = far
+		elif kind == "grass_card":
+			end = 30.0 if far else 15.0
+		elif kind == "fern":
+			end = 35.0
+			mmi.visible = far
+		elif kind == "tape_stake" or kind == "fence_rail":
+			end = 160.0
+		elif kind == "bush_desert" or kind.begins_with("rock") or kind.begins_with("srock"):
+			end = 120.0 if not kind.begins_with("srock_rock_a") else 260.0
+			if kind.begins_with("srock_") and not kind == "srock_rock_c":
+				end = 320.0 if far else 200.0
+		elif kind == "dead_trunk":
+			end = 150.0
+		mmi.visibility_range_end = end
+		# Lav: thinner forest and grass (instances are in random order).
+		var dense: bool = kind.contains("tree") or kind == "grass_card"
+		var n: int = mmi.multimesh.instance_count
+		mmi.multimesh.visible_instance_count = n if far or not dense else int(n * 0.6)
 
 
 # ---------------------------------------------------------------- racers
+
+
+## Cost-probe hook: show or hide one group of the scene.
+func debug_show(group: String, on: bool) -> void:
+	for c: Node in get_children():
+		var g: String = ""
+		var mo: Material = (c as MeshInstance3D).material_override if c is MeshInstance3D else null
+		if mo != null and (mo == _terrain_mat or mo == _terrain_far_mat):
+			g = "ground"
+		elif mo != null and mo == _lane_mat:
+			g = "lanes"
+		elif c is RrRiderView:
+			g = "racers"
+		elif c == fx:
+			g = "fx"
+		for e: Array in _veg:
+			if e[1] == c:
+				var k: String = e[0]
+				g = (
+					"trees"
+					if k.contains("tree")
+					else ("grass" if k in ["grass_card", "fern"] else "props")
+				)
+		if g == group:
+			(c as Node3D).visible = on
 
 
 func make_racers(race: RrRace) -> void:
@@ -594,31 +588,49 @@ func make_racers(race: RrRace) -> void:
 		var view := RrRiderView.new()
 		add_child(view)
 		view.less_motion = less_motion
-		view.build(r.identity, r.team, _kit_shader, _palette)
+		view.build(r.livery)
 		views.append(view)
-		view.set_high(features.get("shadows", false))
-		view.mat.set_shader_parameter("rim", 0.55 if features.get("rim", false) else 0.0)
+		view.set_shadow(features.get("shadows", false))
 	if ghost_view == null:
+		_ghost_mat = StandardMaterial3D.new()
+		_ghost_mat.albedo_color = Color(
+			GHOST_TINT.r, GHOST_TINT.g, GHOST_TINT.b, RrBalance.GHOST_ALPHA
+		)
+		_ghost_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+		_ghost_mat.roughness = 0.6
+		_ghost_mat.emission_enabled = true
+		_ghost_mat.emission = Color(0.25, 0.3, 0.35)
 		ghost_view = RrRiderView.new()
 		ghost_view.ghost = true
 		add_child(ghost_view)
-		ghost_view.build("fox", Color(1, 1, 1), load("res://shaders/rr_ghost.gdshader"), _palette)
+		ghost_view.build(0, _ghost_mat)
 	ghost_view.visible = false
-	for i: int in _bales.size():
-		_bales[i].visible = true
-		_bales[i].scale = Vector3.ONE
+	ghost_alpha = 0.0
+	if _hay != null:
+		for i: int in _hay_xf.size():
+			_hay.multimesh.set_instance_transform(i, _hay_xf[i])
 
 
 func set_gates_live(on: bool) -> void:
 	gates_live = on
-	for c: MeshInstance3D in _curtains:
-		c.visible = on
+	for m: ShaderMaterial in _gate_mats:
+		m.set_shader_parameter("energy", 1.5 if on else 0.0)
 
 
 func set_less_motion(on: bool) -> void:
 	less_motion = on
+	fx.less_motion = on
 	for v: RrRiderView in views:
 		v.less_motion = on
+
+
+## GDD 10.8: ghost opacity from its distance to the player; hidden (no draw)
+## at GHOST_FADE_NEAR_M and closer, full GHOST_ALPHA from GHOST_FADE_FAR_M.
+static func ghost_fade(ds: float, dx: float) -> float:
+	var d: float = sqrt(ds * ds + dx * dx)
+	var near: float = RrBalance.GHOST_FADE_NEAR_M
+	var far: float = RrBalance.GHOST_FADE_FAR_M
+	return RrBalance.GHOST_ALPHA * clampf((d - near) / (far - near), 0.0, 1.0)
 
 
 ## Move every racer view to its rider; ghost_row = [s, x, h, vehicle] or [].
@@ -627,59 +639,57 @@ func sync(race: RrRace, dt: float, ghost_row: Array) -> void:
 		var r: RrRider = race.riders[i]
 		var view: RrRiderView = views[i]
 		view.set_vehicle(r.vehicle, false)
-		var trick_k: float = -1.0
-		if r.trick_t >= 0.0 and r.trick_len > 0.0:
-			trick_k = r.trick_t / r.trick_len
-		var wob: float = race.t - (r.bump_until - RrBalance.BUMP_TIME_S)
-		view.sync(track, r.s, r.x, r.h, r.lat_v, r.vy, r.v, trick_k, wob, dt)
-	if ghost_row.is_empty():
+		view.sync_rider(track, r, race.t, dt)
+	ghost_alpha = 0.0
+	if not ghost_row.is_empty():
+		var p: RrRider = race.player
+		ghost_alpha = RrWorld.ghost_fade(float(ghost_row[0]) - p.s, float(ghost_row[1]) - p.x)
+	if ghost_alpha <= 0.0:
 		ghost_view.visible = false
 	else:
 		ghost_view.visible = true
-		ghost_view.set_vehicle(int(ghost_row[3]), true)
-		ghost_view.sync(
-			track,
-			float(ghost_row[0]),
-			float(ghost_row[1]),
-			float(ghost_row[2]),
-			0.0,
-			0.0,
-			20.0,
-			-1.0,
-			-1.0,
-			dt
-		)
-	for i: int in _bales.size():
-		var back: float = race.bale_back_at(i)
-		if back < 0.0 or race.t >= back:
-			_bales[i].visible = true
-			var grow: float = clampf((race.t - back) / 0.3, 0.0, 1.0) if back >= 0.0 else 1.0
-			_bales[i].scale = Vector3.ONE * maxf(0.01, grow)
-		else:
-			_bales[i].visible = false
+		_ghost_mat.albedo_color.a = ghost_alpha
+		ghost_view.sync_ghost(track, ghost_row, dt)
+	_update_hay(race)
+	_update_rollers(race)
 	_update_pads(dt)
-	_update_curtains(dt)
-	_update_trail(race)
+	_update_gates(dt)
 	_update_camera(race, dt)
-	_update_gpu_fx(race)
+	fx.tick(race, dt, camera, _cam_yaw)
+	_update_casters(race, dt)
 
 
-func _update_gpu_fx(race: RrRace) -> void:
-	if not features.get("gpu_fx", false):
+func _update_hay(race: RrRace) -> void:
+	if _hay == null:
 		return
-	var p: RrRider = race.player
-	var moving: bool = race.phase != RrRace.Phase.PRE and p.v > 8.0
-	var dust_on: bool = moving and not p.airborne and not less_motion and not p.finished
-	var lane: bool = track.is_smooth(p.s)
-	_wheel_dust.emitting = dust_on
-	if dust_on:
-		var back: Vector3 = -RrTrack.forward_flat(track.yaw(p.s)) * 0.75
-		_wheel_dust.global_position = track.world_point(p.s, p.x, 0.12) + back
-		_wheel_dust.amount_ratio = clampf(p.v / RrBalance.CRUISE_MPS - 0.3, 0.2, 1.0)
-		var ppm: ParticleProcessMaterial = _wheel_dust.process_material
-		ppm.color = Color(0.92, 0.97, 1.0) if lane else Color(0.83, 0.65, 0.45)
-	var fast: bool = p.v > RrBalance.CRUISE_MPS * RrBalance.SPEED_LINES_FROM
-	_streaks.emitting = fast and not less_motion and race.phase == RrRace.Phase.RACE
+	for i: int in _hay_xf.size():
+		var back: float = race.bale_back_at(i)
+		var k: float = 1.0
+		if back >= 0.0:
+			k = 0.0 if race.t < back else clampf((race.t - back) / 0.3, 0.0, 1.0)
+		var xf: Transform3D = _hay_xf[i]
+		xf.basis = xf.basis.scaled(Vector3.ONE * maxf(k, 0.0001))
+		_hay.multimesh.set_instance_transform(i, xf)
+
+
+func _update_rollers(race: RrRace) -> void:
+	if _weeds == null:
+		return
+	for i: int in track.rollers.size():
+		var pose: Array = race.roller_pose(i)
+		if pose.is_empty():
+			_weeds.multimesh.set_instance_transform(
+				i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO)
+			)
+			continue
+		var s: float = pose[0]
+		var x: float = pose[1]
+		var spin: float = pose[2]
+		var c: Vector3 = track.world_point(s, x, 0.6)
+		c.y = track.center(s).y + 0.6 + absf(sin(spin * 1.3)) * 0.25
+		var fwd: Vector3 = RrTrack.forward_flat(track.yaw(s))
+		var b := Basis(fwd, -spin) * Basis(Vector3.UP, track.yaw(s))
+		_weeds.multimesh.set_instance_transform(i, Transform3D(b, c - b * Vector3(0, 0.6, 0)))
 
 
 func _update_pads(dt: float) -> void:
@@ -690,36 +700,36 @@ func _update_pads(dt: float) -> void:
 			mm.set_instance_custom_data(i, Color(_pad_flare[i], 0, 0, 0))
 
 
-func _update_curtains(dt: float) -> void:
-	for i: int in _curtains.size():
-		if _curtain_t[i] < RrBalance.SWAP_FX_S:
-			_curtain_t[i] += dt
-			var k: float = clampf(_curtain_t[i] / RrBalance.SWAP_FX_S, 0.0, 1.0)
-			var m: ShaderMaterial = _curtains[i].material_override
-			m.set_shader_parameter("burst", 1.0 - k if k < 1.0 else 0.0)
+func _update_gates(dt: float) -> void:
+	for i: int in _gate_mats.size():
+		if _gate_run[i] < RrBalance.SWAP_FX_S:
+			_gate_run[i] += dt
+			var k: float = clampf(_gate_run[i] / RrBalance.SWAP_FX_S, 0.0, 1.0)
+			_gate_mats[i].set_shader_parameter("run", k if k < 1.0 else -1.0)
 
 
-func _update_trail(race: RrRace) -> void:
-	var p: RrRider = race.player
-	_trail_mesh.clear_surfaces()
-	if not p.boosting(race.t) or p.finished:
-		_trail_pts.clear()
+## Høy: pine chunks near the player cast shadows, farther ones do not.
+func _update_casters(race: RrRace, dt: float) -> void:
+	_cast_t -= dt
+	if _cast_t > 0.0:
 		return
-	_trail_pts.push_front(track.world_point(p.s, p.x, p.h + 0.45))
-	if _trail_pts.size() > 12:
-		_trail_pts.resize(12)
-	if _trail_pts.size() < 2:
-		return
-	var right: Vector3 = RrTrack.right_of(track.yaw(p.s)) * 0.22
-	_trail_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
-	for i: int in _trail_pts.size():
-		var a: float = 0.55 * (1.0 - float(i) / float(_trail_pts.size() - 1))
-		var w: float = 1.0 - float(i) / float(_trail_pts.size())
-		_trail_mesh.surface_set_color(Color(SUN.r, SUN.g, SUN.b, a))
-		_trail_mesh.surface_add_vertex(_trail_pts[i] - right * w)
-		_trail_mesh.surface_set_color(Color(SUN.r, SUN.g, SUN.b, a))
-		_trail_mesh.surface_add_vertex(_trail_pts[i] + right * w)
-	_trail_mesh.surface_end()
+	_cast_t = 0.25
+	var on: bool = features.get("shadows", false)
+	var p: Vector3 = track.center(race.player.s)
+	for mmi: MultiMeshInstance3D in _near_trees:
+		var c: Vector3 = mmi.multimesh.get_aabb().get_center()
+		var near: bool = on and c.distance_to(p) < 90.0
+		mmi.cast_shadow = (
+			GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			if near
+			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		)
+	# Racers: only the ones near the player cast (the shadow pass is the
+	# biggest triangle cost, DESIGN 12); rivals drop to coarser LODs sooner.
+	for i: int in views.size():
+		var r: RrRider = race.riders[i]
+		views[i].set_shadow(on and absf(r.s - race.player.s) < 30.0)
+		views[i].set_lod_bias(1.0 if i == 0 else 0.35)
 
 
 # ---------------------------------------------------------------- camera
@@ -743,10 +753,10 @@ func reset_camera(race: RrRace) -> void:
 	_cam_h = 0.0
 	_cam_mode = "intro"
 	_cam_t = 0.0
-	var head: Vector3 = track.world_point(p.s, p.x, 1.0)
+	var head: Vector3 = track.world_point(p.s, p.x, 1.2)
 	var fwd: Vector3 = RrTrack.forward_flat(_cam_yaw)
 	var rt: Vector3 = RrTrack.right_of(_cam_yaw)
-	var eye: Vector3 = head + fwd * 4.2 + rt * 2.4 + Vector3.UP * 0.5
+	var eye: Vector3 = head + fwd * 4.6 + rt * 2.6 + Vector3.UP * 0.6
 	_intro_from = Transform3D(Basis(), eye).looking_at(head, Vector3.UP)
 	camera.global_transform = _intro_from
 	camera.fov = RrBalance.CAM_FOV
@@ -780,6 +790,8 @@ func fx_land(air: float) -> void:
 
 
 func _update_camera(race: RrRace, dt: float) -> void:
+	if hold_camera:
+		return
 	var p: RrRider = race.player
 	var kpos: float = 1.0 - exp(-RrBalance.CAM_FOLLOW_POS * dt)
 	_cam_x = lerpf(_cam_x, p.x, kpos)
@@ -796,14 +808,14 @@ func _update_camera(race: RrRace, dt: float) -> void:
 				_cam_mode = "chase"
 		"finish":
 			# Low beside the course just before the arch, looking at the rider
-			# as they ride through it (GDD 10.3, DESIGN 6a).
+			# as they ride through it (GDD 10.3).
 			var fs: float = track.length - 16.0
 			var hw: float = track.width(fs) * 0.5
 			var eye: Vector3 = track.world_point(fs, -(hw + 3.0), 1.6)
-			var arch: Vector3 = track.world_point(track.length, 0.0, 2.2)
+			var arch: Vector3 = track.world_point(track.length, 0.0, 2.6)
 			var rider: Vector3 = track.world_point(minf(p.s, track.length + 30.0), p.x, 1.0)
-			var look: Vector3 = arch.lerp(rider, 0.45)
-			var want := Transform3D(Basis(), eye).looking_at(look, Vector3.UP)
+			var lookp: Vector3 = arch.lerp(rider, 0.45)
+			var want := Transform3D(Basis(), eye).looking_at(lookp, Vector3.UP)
 			var k2: float = clampf(_cam_t / 0.45, 0.0, 1.0)
 			if less_motion:
 				k2 = 1.0
@@ -816,7 +828,7 @@ func _update_camera(race: RrRace, dt: float) -> void:
 				_dip_t += dt
 				xf.origin.y -= 0.08 * sin(_dip_t / 0.15 * PI)
 			camera.global_transform = xf
-	# Boost FOV kick (DESIGN 6a / GDD 11).
+	# Boost FOV kick (GDD 11).
 	var fov_hi: float = RrBalance.CAM_FOV_LESS_MOTION if less_motion else RrBalance.CAM_FOV_BOOST
 	if _boost_end_t < 99.0:
 		_boost_end_t += dt
@@ -835,22 +847,9 @@ func _update_camera(race: RrRace, dt: float) -> void:
 	else:
 		camera.v_offset = 0.0
 		camera.h_offset = 0.0
-	_sky_rig.global_position = camera.global_position
-	_clouds.position.x = fmod(race.t * 0.5, 60.0)
 
 
 # ---------------------------------------------------------------- effects
-
-
-func fx_burst(kind: String, pos: Vector3, tint: Color = Color(0, 0, 0, 0)) -> void:
-	var p: CPUParticles3D = _fx.get(kind)
-	if p == null:
-		return
-	if tint.a > 0.0:
-		p.color = tint
-	p.global_position = pos
-	p.restart()
-	p.emitting = true
 
 
 func fx_pad(i: int, bright: bool) -> void:
@@ -859,8 +858,8 @@ func fx_pad(i: int, bright: bool) -> void:
 
 
 func fx_gate(g: int) -> void:
-	if g >= 0 and g < _curtains.size():
-		_curtain_t[g] = 0.0
+	if g >= 0 and g < _gate_mats.size() and gates_live:
+		_gate_run[g] = 0.0
 
 
 func rider_pos(i: int, up: float = 0.0) -> Vector3:
