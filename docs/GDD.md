@@ -12,11 +12,11 @@ Legend: **(owner)** = decided by the owner, do not reopen. **(feel N)** = row N 
 
 ## 1. Pitch
 
-Hold the left or right side of the screen to steer a mountain bike, and later a hoverboard, down a bright mountain trail against five rival riders: hit glowing speed pads, fly off jumps, swap vehicles at magic gates and cross the finish in about 45 seconds; nobody ever crashes and everyone always finishes.
+Hold the left or right side of the screen to steer a mountain bike, and later a hoverboard, down a bright mountain trail against five rival riders: hit glowing speed pads, fly off jumps, swap vehicles at magic gates and cross the finish first in about 45 seconds. Shoulder a rival off their bike to get past; you never fall, and everyone always finishes.
 
 ## 2. Core loop
 
-**Hold** (steer left or right) -> **chase** (pads, boost, overtakes) -> **fly** (jumps with automatic tricks) -> **swap** (bike <-> hoverboard at gates) -> **finish** (cup or ribbon, time vs your ghost) -> race again, or stop at the card.
+**Hold** (steer left or right) -> **chase** (pads, boost, overtakes) -> **shove** (knock a rival off its bike) -> **fly** (jumps with automatic tricks) -> **swap** (bike <-> hoverboard at gates) -> **finish** (cup or ribbon, time vs your ghost) -> race again, or stop at the card.
 
 One race is about 45 s, plus about 8 s from the card to the next start (feel 25-27). There is no score, no currency and no game over (owner). Every finish earns a trophy shape and counts toward unlocks (rule 30).
 
@@ -49,7 +49,7 @@ Taller screens (20:9, canvas about 1080x2400): HUD anchors to the top, boost dis
 | Tap boost disc | Boost disc | On release inside, if charged: boost fires. If not charged: a soft "not yet" thump, the ring wiggles 6 px for 150 ms. |
 | Pre-race start | Anywhere in the steer zones or boost disc | Touch-down starts the gate lights (section 10.2). If nobody touches, the race starts by itself after `AUTO_START_S`. |
 | Gear | Gear zone | First tap: disc pops to 1.2x, a ring fills over 2.0 s, the race keeps running. Second tap between 0.3 and 2.0 s: race pauses and the settings panel opens. No second tap: ring fades in 250 ms. |
-| Home disc / Android back | Top-left | Stand-alone: same guard as the gear; the second tap leaves to the track page. In the shell the shell owns this. |
+| Home disc / Android back | Top-left | Stand-alone: same guard as the gear; the second tap leaves to the world page. In the shell the shell owns this. |
 | App to background | | Pause. On return, a 240 px "play" disc in the centre resumes on release. |
 | Card buttons | Card | Section 10.3. |
 
@@ -62,7 +62,7 @@ The track is a `Path3D` centre line. Every rider is simulated in track space: **
 ### 4.1 Speed
 
 - Every rider has a speed v along s. Each frame: `target = CRUISE * section_mult * vehicle_mult * product(active effects) * (AI: skill * rubber band)`. v moves toward target at `ACCEL_UP` when below, `ACCEL_DOWN` when above.
-- Speed floor after the start: `v >= MIN_SPEED_FRAC * CRUISE` (12 m/s). Nothing in the game can stop a rider, so a race always ends (worst case 950 / 12 = 79 s, my calc).
+- Speed floor after the start: `v >= MIN_SPEED_FRAC * CRUISE` (12 m/s). Nothing in the game can stop the player, so a race always ends (worst case 950 / 12 = 79 s, my calc). The only exception to the floor is a knocked-off rival during its fall, lie-down, get-up and rejoin (4.7); the floor applies to it again once it is back to 0.9 of its target speed.
 - Effects multiply and each has its own timer. The same effect again refreshes its timer instead of stacking, except pad chains (4.4).
 
 ### 4.2 Steering
@@ -101,15 +101,51 @@ The track is a `Path3D` centre line. Every rider is simulated in track space: **
 - **Automatic trick** (no input, feel 13): if air_s >= `TRICK_MIN_AIR_S` (0.8 s), one trick starts 0.15 s after take-off and lasts `TRICK_TIME_S` (0.6 s), ending at least 0.15 s before landing. Tricks cycle in a fixed order per vehicle (bike: no-hands, tail-whip, superman; hoverboard: 360 spin, grab, board-flip). Graphic-designer animates them.
 - **Landing always succeeds** (owner: no crashes). Landing squash (section 11). If air_s >= `LAND_BONUS_MIN_AIR_S` (1.2 s): speed x`LAND_BONUS_MULT` (1.10) for `LAND_BONUS_TIME_S` (0.8 s) and a star popup.
 
-### 4.7 Bumps (owner: wobble, nobody crashes)
+### 4.7 Bumps and knock-offs (owner change 2026-10-06 12:42)
 
-- Riders are circles of `RIDER_RADIUS` 0.5 m. Contact when `|dx| < 1.0` and `|ds| < 1.4` m.
-- On contact: both get pushed apart sideways at `BUMP_PUSH` 3 m/s for 0.2 s, both **wobble** for `BUMP_TIME_S` (0.5 s): player speed x0.95, AI speed x0.90 (my call: bumping is never bad for the child). Same pair cannot bump again for 1.0 s.
-- No knock-out, no fall, no skull, no "out" word. The AI never aims at the player.
+The player can **knock a rival off**: the rival falls, lies down briefly, gets up and rejoins. Rivals can only **nudge** the player sideways; **the player never falls and is never slowed by contact**.
 
-### 4.8 Soft obstacles
+**Contact:** riders are circles of `RIDER_RADIUS` 0.5 m. Contact when `|dx| < BUMP_DX_M` (1.0) and `|ds| < BUMP_DS_M` (1.4). Same pair cannot make contact again for `BUMP_PAIR_COOLDOWN_S` (1.0 s). Each contact is resolved as exactly one of these, checked in this order:
 
-- Hay bales only in the slice (1.6 m wide, 1.0 m deep). Riding into one: it bursts into straw particles, speed x`HAY_MULT` (0.85) for `HAY_TIME_S` (0.5 s). The rider goes straight through; no stop, no bounce.
+1. **Knock-off (player hits rival).** All must be true:
+   - side contact: `|ds| < KNOCK_DS_M` (1.0 m), so the two are roughly side by side, not nose to tail;
+   - the player's own lateral speed **toward** the rival is at least `KNOCK_LAT_MIN` (Lett 1.0 m/s, Vanlig 1.5 m/s). Full steer is 5.0 m/s, so holding toward a rival always qualifies; Lett auto-steer (2.5 m/s) can also do it by accident, which is fine. The rival's own lean-in never counts;
+   - both on the ground (contacts in the air are plain nudges);
+   - the rival is not immune (`KNOCK_IMMUNE_S`, 6 s after it is riding again; no visible marker, a contact with an immune rival is a plain nudge).
+
+   When true, it **always** knocks off (no dice roll; the child must be able to learn it). The player keeps full speed and gets no push.
+2. **Rival hits player, or a player contact that does not qualify.** The player gets a **nudge**: pushed sideways away from the rival at `NUDGE_PUSH_MPS` (2.5 m/s) for `NUDGE_PUSH_S` (0.25 s), then **auto-recentres**: steers back to the x it had before the nudge at `RECENTRE_LAT_MPS` (2.0 m/s), for at most `RECENTRE_MAX_S` (1.0 s), cancelled the moment the player touches a steer zone. No speed change. In Lett the kid-line assist then resumes as usual. The rival gets the old bump: pushed the other way at `BUMP_PUSH_MPS` 3 m/s for 0.2 s and wobbles for `BUMP_TIME_S` 0.5 s at speed x`BUMP_MULT_AI` 0.90.
+3. **Rival hits rival:** both pushed apart at 3 m/s for 0.2 s, both wobble 0.5 s at x0.90. Rivals never knock each other off.
+
+**The fall (rival), in time from the hit:**
+
+| Time | What happens |
+|---|---|
+| 0-0.5 s | Bike (or board) tips over to the side away from the player; rider and vehicle slide toward the nearest rail at `FALL_SLIDE_LAT_MPS` (3 m/s) while slowing at `FALL_DECEL` (40 m/s^2, so from 20 m/s to a stop in 0.5 s). The fallen rival has **no collision** from the hit until it rides again, so nobody piles into it. |
+| 0.5-1.2 s | Lies on the ground by the rail (`FALL_DOWN_S` 1.2 s from the hit). |
+| 1.2-1.7 s | Gets up, lifts the bike, remounts (`GETUP_S` 0.5 s). Unhurt: no limp, no pain sound. |
+| 1.7 s on | Rejoins: accelerates at `REJOIN_ACCEL` (10 m/s^2) back to its target speed and steers back to its line at the normal AI lateral speed. |
+
+Time lost by the rival is about 3 s (my calc: about 1.7 s stopped or nearly stopped, plus half of the 0.5 s slow-down and half of the 2 s re-acceleration), which is enough to drop it to the back of a 3-5 s pack.
+
+**Rubber band while fallen:** a rival that is falling, lying, getting up or rejoining is **left out of the rubber band** until its speed is back to `REJOIN_RB_OFF_FRAC` (0.9) of its target. After that the normal band applies (in Lett the +4% catch-up slowly brings it back to the pack, so races stay close).
+
+**Rivals pushing back (competitive tone):** in Vanlig, a rival riding beside the player (`|ds| < 1.0`, `|dx| < 2.0`) rolls `RIVAL_LEAN_IN_V` (0.25) every `RIVAL_LEAN_IN_EVERY_S` (2.0 s) to lean 1.0 m toward the player, which causes nudges. In Lett rivals never lean in (`RIVAL_LEAN_IN_L` 0). No rival ever blocks the finish or rams from behind on purpose.
+
+No skull, no "out" word, no mocking popup: the knocked-off rival gets a small tumbling-bike icon for 500 ms (section 11).
+
+### 4.8 Hindrances (owner 13:05: they slow or nudge, they NEVER make anyone fall)
+
+Every world's hindrances are built from four generic types, so the builder writes four behaviours and each world only places them with its own model and effect. Only the player can knock someone off (4.7); no hindrance ever does.
+
+| Type | Behaviour | Slice uses | Later worlds use |
+|---|---|---|---|
+| **Block** (static, burst) | Rider passes straight through; the object bursts or tips away; speed x`mult` for `time` | W1 hay bales (x`HAY_MULT` 0.85, 0.5 s) | W5 fallen-branch piles, W6 traffic cones |
+| **Patch** (area on the ground) | While the rider's centre is inside: speed x`mult`, and/or a steering change. Optional `hover_immune`: the hoverboard floats over it | W1 mud puddles (x`MUD_MULT` 0.90, bike and board), W2 sand drifts (x`SAND_MULT` Lett 0.94 / Vanlig 0.88, **hoverboard floats over**) | W3 ice (no slow, slide), W3 snow drifts, W4 ash, W5 river ford (board immune), W6 wet steel (slide) |
+| **Roller** (moving across the track) | Spawns at one rail when the player is `ROLLER_TRIGGER_M` (40 m) before its s, rolls across at `ROLLER_LAT_MPS` (Lett 2.0, Vanlig 3.0 m/s), leaves at the other rail. Contact: the rider gets a **nudge** sideways in the roller's direction (`ROLLER_NUDGE_MPS` 2.0 m/s for 0.25 s), no speed loss; the player auto-recentres as in 4.7. The roller bursts (tumbleweed) or bounces off the rail and is gone | W2 tumbleweeds | W3 snow slough, W4 small falling rocks, W6 empty cable spools |
+| **Hop** (low object across the track) | A mini-kicker: 0.4 s of air, no trick, no slow | none | W5 logs, W4 lava-crust ridges |
+
+Lett kid lines route around every Block and Patch; Rollers are not dodged by the kid line (they only nudge, which is harmless and funny). AI avoid Blocks and Patches with `AI_HAY_AVOID` 0.8 and ignore Rollers.
 
 ### 4.9 Swap gates (owner: auto swap at 2 gates)
 
@@ -135,46 +171,76 @@ The track is a `Path3D` centre line. Every rider is simulated in track space: **
 | Speed pad | Plate with 3 static arrow chevrons, glows | 4.4 | feel 11 |
 | Kicker | Ramp with a curved lip, plank or earth | 4.6 | feel 12 |
 | Swap gate | Tall arch with a bike icon on one pillar and a board icon on the other | 4.9 | feel 16 |
-| Hay bale | Round bale, straw texture | 4.8 | feel 18 |
+| Hay bale (W1) | Round bale, straw texture | 4.8 Block | feel 18 |
+| Mud puddle (W1) | Dark wet patch with ruts, splashes | 4.8 Patch | owner 13:05 |
+| Sand drift (W2) | Pale ridged sand tongue across the hard-pack | 4.8 Patch, board floats over | owner 13:05 |
+| Tumbleweed (W2) | Rolling ball of dry brush, about 1.2 m | 4.8 Roller | owner 13:05 |
 | Rail | Low wooden fence (forest), rock (tunnel) | 4.2 | feel 17 |
 | Finish gate | Wide arch with a chequered banner (no text) | Section 10.2 | feel 20 |
 
-## 6. Track 1, the vertical slice: "Furuløypa / Pine Run"
+## 6. Worlds (owner 13:05: every level is a different world)
 
-Forest mountain trail on a sunny afternoon (setting cue only; graphic-designer owns the look). Length **950 m** to the finish line, plus a 60 m run-out. Target times (my calc, `tools/pack_sim.py`, 150-400 runs): idle Lett child 43.8 s on the bike, average player 43.7-44.5 s, skilled player 41.0 s, idle Vanlig rider 46.9-47.8 s. All inside the owner's ~45 s.
+Each level is its own realistic world: its own look, weather effects, jumps, hindrances and landmarks. The next level is **never** the same track again. Cruise speed is 20 m/s everywhere; worlds get a little longer, never faster. Weather is one GPU particle emitter (<= 600 particles, my call for the phone budget) plus depth fog; no volumetrics, no real-time reflections.
 
-### 6.1 Section table (s in metres from the start line; x in metres, + = right)
+### 6.0 The six worlds
+
+| # | World (NO / EN) | Setting (realistic) | Length / time | Signature jump or feature | Hindrances (slow or nudge, never a fall) | Weather / particles | Landmarks and objects | Teaches |
+|---|---|---|---|---|---|---|---|---|
+| 1 | **Furuløypa / Pine Run** | Alpine pine forest, summer afternoon | 950 m / ~44 s (sim) | **Gully plank jump** (K3, 1.6 s air) | Hay bales (Block), mud puddles (Patch) | Sun shafts through pines, drifting pollen, falling needles | Log cabin, wooden river bridge, rock tunnel, farm fences, cowbell meadow at the finish | Steer, pads, boost, jumps, swap gates, knocking rivals off |
+| 2 | **Ørkenjuvet / Red Canyon** | Desert canyon, red sandstone, hard midday sun | 980 m / ~45 s (sim) | **Mesa gap**: jump across a dry gorge between two mesas (K3, 1.8 s air, the longest yet) | Sand drifts (Patch; the board floats over), tumbleweeds (Roller) | Blowing sand streaks, dust devils in the distance, heat haze as a cheap fog tint | Sandstone arch, old highway on the rim, rusty water tower, abandoned gas station, mining-town street finish | **Moving hindrances** (tumbleweeds) and that the board beats sand |
+| 3 | **Isbreen / Glacier Run** | Snowy glacier under a pale blue sky | 1000 m / ~46 s (est.) | **Ice-cave exit**: ride through a blue ice cave and launch out over a crevasse (1.6 s) | Ice patches (Patch: no slow, steering slides: lateral speed x1.3, ease x2), snow drifts (Patch x0.90), snow slough (Roller) | Light snowfall, spindrift off ridges, sun glare sprite | Glacier hut, crevasse ladder-bridge, flag poles, snow-cat tracks, blue seracs | **Slippery steering** on ice |
+| 4 | **Askefjellet / Ash Mountain** | Volcanic slope, black ash, cooled lava fields, dim orange light | 980 m / ~46 s (est.) | **Steam vent launch**: a vent puffs every 2 s; ride over it while it puffs for a 1.4 s jump (miss it and you just ride on) | Ash dunes (Patch x0.88, board floats), small falling rocks (Roller from the uphill side), lava-crust ridges (Hop) | Falling ash flakes, ember sparks, smoke haze; lava glows only behind rails, never on the track | Smoking crater cone, basalt columns, research station, cooled lava rivers | **Timed launch** (first jump the rider must aim at) |
+| 5 | **Regnskogen / Rainforest** | Tropical rainforest, after rain | 1000 m / ~46 s (est.) | **Waterfall drop**: launch off a waterfall lip into the pool below (1.8 s), splash | River ford (Patch x0.85 on the bike, board immune), logs (Hop), fallen-branch piles (Block) | Rain drops, mist, waterfall spray, a few butterflies | Waterfall, rope suspension bridge, giant buttress roots, moss-covered stone ruins | **Split path**: bridge route (narrow, 1 pad) or ford route (wide, 3 pads but the ford slows the bike); equal length |
+| 6 | **Nattehavna / Night Harbour** | Industrial port at night | 1050 m / ~48 s (est.) | **Crane jump**: ramp off a container stack, through a gantry crane, over the water channel (2.0 s) | Wet steel plates (Patch, slide like ice), traffic cones (Block x0.95), rolling cable spools (Roller) | Light drizzle, sodium-lamp glow sprites, crane warning lights (slow blink, under 1 Hz) | Container stacks, gantry cranes, moored ferry, warehouses, a lit bridge in the distance | **Air rings**: fly through a ring over a jump for +1 s of x1.25 speed (uses air steering) |
+
+Times for worlds 1-2 come from `tools/pack_sim.py` (my calc); worlds 3-6 are estimates from length / cruise, to be simulated once their section tables exist. Hindrances never stack more than one per 60 m of track (my call). Flash rule (rule 37) holds everywhere: crane lights, embers and lightning-free weather only.
+
+### 6.1 World 1, slice: "Furuløypa / Pine Run"
+
+Alpine pine forest trail on a summer afternoon (graphic-designer owns the look). Length **950 m** to the finish line, plus a 60 m run-out. Target times (my calc, `tools/pack_sim.py 150 1`, with the 13:05 mud puddles): idle Lett child 43.2-43.7 s, average 43.6-44.3 s, skilled 40.9-41.8 s, idle Vanlig rider 46.8-47.7 s. All inside the owner's ~45 s.
+
+### 6.1.1 Section table (s in metres from the start line; x in metres, + = right)
 
 | s from-to | Section | Surface / vehicle | Width | Cruise mult | Contents | Kid line x |
 |---|---|---|---|---|---|---|
 | -15-0 | Start grid | Dirt | 12 | - | 5 AI ahead of the player (section 7.2) | 0 |
 | 0-40 | Start drop | Dirt / bike | 12 -> 10 | 1.00 | Short downhill out of the start gate | 0 |
-| 40-180 | Skogsstien (forest path) | Dirt / bike | 10 | 1.00 | Gentle S-bend (radius 60 m left, then right). **P1** pad at s 120, x 0 | 0 |
+| 40-180 | Skogsstien (forest path) | Dirt / bike | 10 | 1.00 | Gentle S-bend (radius 60 m left, then right). **P1** pad at s 120, x 0. **M1** mud puddle s 150-160, x +2 to +4.5 | 0 |
 | 180 | **K1** log kicker | Dirt | 10 | | Air **1.0 s** (first jump, short) | 0 |
 | 180-300 | Pine slope | Dirt / bike | 10 | 1.00 | **P2** s 210, x -3. **H1** hay s 260, x +2.5 | 0 |
 | 300 | **Gate G1** | | 10 | | Bike -> hoverboard (after unlock) | 0 |
 | 300-600 | Elvevegen (river road) | Smooth gravel road + boardwalk / hoverboard | 10 | 1.00 (hover x1.06) | **Chain P3-P5** at s 340, 352, 364, x +2.5. **K2** bridge hump at s 430, air **1.2 s**. **P6** s 470, x -3. **H2** hay s 520, x -0.5 (in the straight-line path on purpose). Rock tunnel s 540-580, width 8 | +2.5 at 330-375, 0 to 495, +1.8 at 500-540, 0 after |
 | 600 | **Gate G2** | | 10 | | Hoverboard -> bike | 0 |
-| 600-880 | Bratthenget (steep slope) | Dirt + plank ramp / bike | 9 (7 at 720-770) | 1.05 | **H3** s 650, x -2. **P7** s 700, x +3. Track narrows with fences to the plank ramp. **K3** big plank kicker s 760, air **1.6 s** (the hero jump). **Chain P8-P10** at s 800, 812, 824, x -3. **H4** s 840, x +1.5 | +3 at 685-715, 0 after |
+| 600-880 | Bratthenget (steep slope) | Dirt + plank ramp / bike | 9 (7 at 720-770) | 1.05 | **H3** s 650, x -2. **M2** mud puddle s 685-695, x -4 to -1.5. **P7** s 700, x +3. Track narrows with fences to the plank ramp. **K3** big plank kicker s 760, air **1.6 s** (the hero jump). **Chain P8-P10** at s 800, 812, 824, x -3. **H4** s 840, x +1.5 | +3 at 685-715, 0 after |
 | 880-950 | Finish meadow | Grass / bike | 12 | 1.00 | **K4** finish hill s 900, air **1.0 s**. Finish gate at s 950 | 0 |
 | 950-1010 | Run-out | Grass | 12 | target 0.5 | Riders coast; finish shot plays here | 0 |
 
-Counts: 10 pads (2 chains of 3), 4 kickers (one every ~11 s, feel 12), 4 hay bales, 2 swap gates. The kid line hits 5 of 10 pads (P1, P3, P4, P5, P7) and no hay. A straight idle Vanlig rider hits P1 and H2. A skilled rider can take all 10 pads and avoid all hay.
+Counts: 10 pads (2 chains of 3), 4 kickers (one every ~11 s, feel 12), 4 hay bales, 2 mud puddles (added 13:05; the current build has the hay only), 2 swap gates. The kid line hits 5 of 10 pads (P1, P3, P4, P5, P7) and no hay. A straight idle Vanlig rider hits P1 and H2. A skilled rider can take all 10 pads and avoid all hay.
 
 Elevation hint for the level builder: about 120 m total drop, steepest in Bratthenget; the camera must always see 40+ m of track ahead, so no blind crests except the K3 lip.
 
-### 6.2 Later tracks (full game, one new idea each)
+### 6.2 World 2, slice: "Ørkenjuvet / Red Canyon"
 
-| # | Name (NO / EN) | Setting cue | New idea | Length | Target time |
-|---|---|---|---|---|---|
-| 1 | Furuløypa / Pine Run | Forest trail, river road | Basics: steer, pads, jumps, swap gates | 950 m | ~44 s |
-| 2 | Havnebyen / Harbour Town | Quayside, boardwalk, rooftops | **Split path**: the track forks around a lighthouse into two equal-length lanes, then joins | 1000 m | ~46 s |
-| 3 | Snøtoppen / Snow Top | Snow bowl, ice tunnel | **Ice patches**: lateral speed x1.3 and 0.3 s longer ease (slidey), hoverboard section longer | 1000 m | ~46 s |
-| 4 | Ørkenjuvet / Red Canyon | Red rock canyon, rope bridge | **Whoops**: rows of small bumps that give 0.4 s mini-airs (no tricks) | 1050 m | ~48 s |
-| 5 | Lysskogen / Glow Forest | Night forest, glowing mushrooms | **Breather**: no new element, no hay, 14 pads, wide track | 1000 m | ~45 s |
-| 6 | Nordlysfjellet / Aurora Peak | Night summit, aurora sky | **Bounce mushrooms** (a pad that launches a 1.2 s jump) + every earlier element, finale | 1100 m | ~52 s |
+Desert canyon of red sandstone under a hard midday sun. Length **980 m** plus a 60 m run-out. Same pad count, kicker count and gate count as world 1 so the owner sees the **world** change, not a difficulty spike. Target times (my calc, `tools/pack_sim.py 150 2`): idle Lett child 44.3-45.2 s, average 44.6-45.5 s, skilled 42.4-43.4 s, idle Vanlig rider 48.3-49.3 s. About 1.3 s longer than world 1, from the extra 30 m and the sand.
 
-Cruise speed stays 20 m/s on every track; tracks get longer, not faster (feel 1: the reference grows 33 -> 50 s, then plateaus). All still 2 swap gates.
+| s from-to | Section | Surface / vehicle | Width | Cruise mult | Contents | Kid line x |
+|---|---|---|---|---|---|---|
+| -15-0 | Start grid | Red dirt by a rusty water tower | 12 | - | Same grid as world 1 | 0 |
+| 0-60 | Canyon drop | Red dirt / bike | 12 -> 10 | 1.00 | Steep drop between rock walls | 0 |
+| 60-220 | Tørrelva (dry wash) | Packed sand / bike | 10 | 1.00 | **P1** s 110, x 0. **D1** sand drift s 150-165, x -3 to +0.5. **K1** rock lip s 200, air **1.0 s** | 0; +2 at 140-170 |
+| 220-300 | Slot canyon | Sandstone / bike | 8 | 1.00 | Narrow, high walls, light from above. **T1** tumbleweed rolls left -> right, centred on s 260. **P2** s 285, x +2 | 0 |
+| 300 | **Gate G1** | | 10 | | Bike -> hoverboard | 0 |
+| 300-620 | Gamleveien (old rim highway) | Cracked asphalt / hoverboard | 11 | 1.00 (hover x1.06) | Canyon drop-off on the left behind a rail. **Chain P3-P5** s 350, 362, 374, x -2.5. **T2** s 420 (right -> left) and **T3** s 440 (left -> right). **K2** culvert hump s 480, air **1.2 s**. **P6** s 540, x +3. Abandoned gas station s 560. **D2** sand drift s 580-595, x -1 to +3.5 (the board floats over it; on the bike in race 1 it slows) | -2.5 at 335-385, 0 after; -2.5 at 570-600 |
+| 620 | **Gate G2** | | 10 | | Hoverboard -> bike | 0 |
+| 620-900 | Mesakanten (mesa switchbacks) | Red dirt / bike | 9 (8 at 760-780) | 1.05 | **P7** s 670, x -3. **T4** s 720 (right -> left). **K3 Mesa gap** s 780: the track narrows to an 8 m lip and jumps a dry gorge to the next mesa, air **1.8 s** (signature, camera keeps 1.0 m extra height lag). **Chain P8-P10** s 830, 842, 854, x +3 on the landing run. **D3** sand drift s 870-885, x -3.5 to 0 | -3 at 655-685, 0 after; +1.5 at 860-890 |
+| 900-980 | Mining-town street | Hard dirt between wooden fronts / bike | 12 | 1.00 | **K4** wooden loading-ramp s 930, air **0.8 s** (no bonus). Finish gate s 980 under a water-tower | 0 |
+| 980-1040 | Run-out | Dirt | 12 | target 0.5 | Finish shot | 0 |
+
+Counts: 10 pads (2 chains of 3), 4 kickers, 3 sand drifts, 4 tumbleweeds, 2 swap gates. Kid line hits P1, P3-P5, P7 (5 of 10) and no drift. A straight idle Vanlig rider hits P1 and all three drifts (D2 only on the bike). Elevation hint: about 140 m total drop; the mesa gap lands 6 m lower than it takes off.
+
+### 6.3 Worlds 3-6 (full game)
+
+Built after the slice, each with its own section table in the same format, 10 pads, 4 kickers including the signature, 2 swap gates and the hindrances from table 6.0. Each world adds exactly one new mechanic (table 6.0, last column); world 5's split path is the only layout change. Section tables are game-designer work for the next pass.
 
 ## 7. AI pack
 
@@ -197,10 +263,11 @@ The player starts last at s 0, x 0 (feel 3). The fastest AI starts at the front.
 1. **Line:** lateral target = `x_kid(s) + lane_offset`, clamped inside the rails.
 2. **Pads:** 30 m before each pad, roll once against `pad_seek`; on success the lateral target becomes the pad's x until the pad is passed.
 3. **Hay:** 25 m before a bale in its path, roll 0.8 to swerve 2 m to the more open side.
-4. **Traffic:** if another rider is within 3 m ahead and `|dx| < 1.2`, roll 0.7 to shift 1.5 m to the more open side (the failed rolls make the natural bumps).
+4. **Traffic:** if another rider is within 3 m ahead and `|dx| < 1.2`, roll 0.7 to shift 1.5 m to the more open side (the failed rolls make the natural bumps). Fallen rivals are not traffic (no collision).
 5. **Boost:** when its meter is full, fires after a random 0.5-3.0 s.
 6. **Lateral speed:** 4.0 m/s max, 0.2 s ease (slightly calmer than the player).
-7. **Never** aims at the player, never blocks on purpose.
+7. **Contact with the player:** Lett: never aims at the player. Vanlig: leans in now and then (4.7, "Rivals pushing back"); the player is only ever nudged. Never blocks on purpose.
+8. **Knocked off:** follows the fall table in 4.7, then resumes from step 1.
 
 ### 7.3 Rubber-banding (visible, fair, symmetric caps; feel 5)
 
@@ -210,6 +277,7 @@ The player starts last at s 0, x 0 (feel 3). The fastest AI starts at the front.
 - AI behind the player (`gap < 0`): speed x `(1 + RB_BEHIND * k * fade)`.
 - `fade` = 1 until the player's progress reaches `RB_FADE_FROM`, then drops linearly to 0 over the next 10% of the track.
 - Clamp the AI's total multiplier to 0.80-1.50. After the player finishes, AI run on skill alone.
+- A knocked-off rival is left out of the band until it is back to 0.9 of its target speed (4.7).
 
 | | Lett | Vanlig |
 |---|---|---|
@@ -219,19 +287,22 @@ The player starts last at s 0, x 0 (feel 3). The fastest AI starts at the front.
 
 Why: in Lett the pack waits for a child all race. In Vanlig it keeps the first half close and exciting, then lets go so skill decides the end.
 
-### 7.4 Expected results (my calc, `tools/pack_sim.py`, 150 runs each, 1D model; tune again on the phone)
+### 7.4 Expected results with knock-offs (my calc, `tools/pack_sim.py`, 150 runs each, 1D model; tune again on the phone)
 
-| Player | Mode | Vehicle | Time | Places | Wins | Gap |
-|---|---|---|---|---|---|---|
-| Holds nothing (4-year-old) | Lett | bike | 43.8 s | 1st 33%, 2nd 59%, 3rd 7% | 33% | 0.23 s behind the winner (median when not 1st) |
-| Holds nothing | Lett | + hoverboard | 43.3 s | 1st 20%, 2nd 66%, 3rd 13% | 20% | 0.28 s |
-| Steers at random (half the pads, hits 40% of hay) | Lett | either | 43.8-44.5 s | mostly 2nd-3rd | 10-14% | 0.5 s |
-| Skilled (all pads, instant boost) | Lett | either | 41.0-41.8 s | always 1st | 100% | wins by 1.1-1.3 s |
-| Holds nothing | Vanlig | either | 46.9-47.8 s | 4th-5th | 0% | 3.1-3.3 s behind |
-| Average | Vanlig | either | 43.7-44.4 s | 1st 45-48%, 2nd 42-49% | ~46% | photo finishes, 0.4 s |
-| Skilled | Vanlig | either | 41.0-41.8 s | always 1st | 100% | **wins by 2.2-2.3 s** |
+| Player | Mode | World | Time (bike / board) | Places | Wins | Top 3 | Knock-offs per race | Gap |
+|---|---|---|---|---|---|---|---|---|
+| Holds nothing (4-year-old) | Lett | 1 | 43.7 / 43.2 s | 1st 27-56%, 2nd 40-61%, 3rd 3-10% | 27-56% | **99-100%** | 0.7-0.8 | 0.3 s behind the winner (median when not 1st) |
+| Holds nothing | Lett | 2 | 45.2 / 44.3 s | 1st 32-36%, 2nd 61%, 3rd 2-6% | 32-36% | **100%** | 0.6-0.7 | 0.2-0.3 s |
+| Steers at random (half the pads, 40% of hindrances) | Lett | 1 / 2 | 43.6-45.4 s | mostly 1st-2nd | 42-46% | 98-99% | 2.0-2.2 | 0.3-0.5 s |
+| Skilled (all pads, instant boost) | Lett | 1 / 2 | 40.9-43.4 s | always 1st | 100% | 100% | 3.1-3.6 | wins by 1.7-2.5 s |
+| Holds nothing | Vanlig | 1 | 47.7 / 46.8 s | 4th 68%, 5th 29-30% | 0% | 1-2% | 0 | 3.0 s behind |
+| Holds nothing | Vanlig | 2 | 49.3 / 48.3 s | 4th 54-58%, 5th 41-44% | 0% | 0-1% | 0 | 3.3 s behind |
+| Average | Vanlig | 1 / 2 | 43.6-45.5 s | 1st 67-75%, 2nd 24-32% | 67-75% | 100% | 1.8-1.9 | wins by 1.0-1.3 s |
+| Skilled | Vanlig | 1 / 2 | 40.9-43.4 s | always 1st | 100% | 100% | 3.0-3.2 | **wins by 3.3-3.8 s** |
 
-Owner targets met in the model: a child holding nothing always finishes, in the pack, usually 2nd; a skilled player wins by a few seconds. Pack spread is 2.6-4.7 s except when a skilled Vanlig player escapes (7 s), which is the reward for skill (feel 5 says <= 4 s for the pack itself).
+The ranges are bike-only (race 1) vs hoverboard unlocked; in practice world 2 is always raced with the board unlocked. The 1D sim models a knock-off as a chance per pass that the player steers into the rival hard enough: holds nothing in Lett 10% (auto-steer drift), holds nothing in Vanlig 0%, average 30%, skilled 60%; immunity and the fall table as in 4.7. Rival nudges, tumbleweeds and Vanlig lean-in cost no speed, so they are not simulated. World 1 now models hindrance hits deterministically for the idle Vanlig rider (H2 only) instead of the old 25% guess, which moved the numbers slightly.
+
+Before knock-offs (same sim, version 1 of this doc): Lett idle won 20-33% with top 3 at 99-100%; Vanlig average won about 46%; Vanlig skilled won by 2.2-2.3 s. Knock-offs help only the player, so every player type moves up. Owner targets still met: a child holding nothing finishes top 3 in Lett in 99-100% of runs in both slice worlds; a skilled player wins by a few seconds. Pack spread is now 3-6 s for normal play and 7-9 s when a skilled player knocks rivals down and escapes. If Vanlig turns out too easy on the phone, raise every `AI_SKILL_V` by 0.01 first (open question 8). Shortening the fall barely changes the results (sim: Vanlig average wins 65-67% at 0.6-0.8 s down vs 62% at 1.2 s), so keep the fall long enough to read.
 
 ## 8. Modes: Lett (4-7, default) vs Vanlig (8+)
 
@@ -243,42 +314,42 @@ Owner targets met in the model: a child holding nothing always finishes, in the 
 | AI skill | 0.93-1.01 | 0.90-0.98 |
 | Rubber band | strong, never fades | mild, fades out at 40-50% |
 | Race timer on HUD | hidden | small, top centre-right |
-| Same track, same speed, same bumps | yes | yes |
+| Knock-off lateral speed threshold | 1.0 m/s | 1.5 m/s |
+| Rivals lean in toward the player | never | 25% chance every 2 s when side by side |
+| Same track, same speed, same knock-off and fall rules | yes | yes |
 
-Rule 16 (no reflex demand at the easiest level) and rule 31 (no game over for 4-7) hold in both: nothing can stop or eliminate a rider.
+Rule 16 (no reflex demand at the easiest level) and rule 31 (no game over for 4-7) hold in both: nothing can stop or eliminate the player, and a knocked-off rival always gets up and finishes.
 
 Where the setting lives: inside MWM Play the adapter calls `set_difficulty(easy: bool)` (same as Neon Bricks; parent-area row). Stand-alone: a two-icon segment (small rider / big rider) in the settings panel. Takes effect at the next race start.
 
 ## 9. Progression and unlocks (owner: by playing only)
 
-### 9.1 Unlock order (counted on finishes, any place, so a 4-year-old progresses as fast as a skilled player)
+### 9.1 Unlock order (owner 13:05: the next world opens on finishing the previous one, any place)
 
-| Total finishes | Unlock | Notes |
+| When | Unlock | Notes |
 |---|---|---|
-| 1 | **Hoverboard** (gates go live) | Owner. Reveal card after the reward card |
-| 2 | Rider outfit 2 | Cosmetic |
-| 3 | **Track 2** Havnebyen | Full game only |
-| 4 | Hoverboard skin 2 | |
-| 5 | Rider outfit 3 | |
-| 6 | **Track 3** Snøtoppen | |
-| 7 | Bike skin 2 | |
-| 9 | **Track 4** Ørkenjuvet | |
-| 12 | **Track 5** Lysskogen | |
-| 15 | **Track 6** Nordlysfjellet | |
-| First 1st place on a track | That track's gold trim for the bike | 6 total, a nod to skill; never needed |
+| First finish of world 1 | **Hoverboard** (gates go live everywhere) **and world 2** | Owner. Two reveal cards in a row: board, then the world-2 picture |
+| First finish of world N (N = 2-5) | **World N+1** | Any place counts, so a 4-year-old progresses as fast as a skilled player |
+| 2 total finishes | Rider outfit 2 | Cosmetic |
+| 4 total finishes | Hoverboard skin 2 | |
+| 5 total finishes | Rider outfit 3 | |
+| 7 total finishes | Bike skin 2 | |
+| First 1st place in a world | That world's gold trim for the bike | 6 total, a nod to skill; never needed |
+
+Replaying an old world is always allowed from the world page, but the card's biggest disc always points to the next new world while one is open (10.3), so "next level" is never the same track.
 
 Not-yet-earned items are **not drawn at all** (no padlocks, no greyed tiles, rule 22 counter-consideration 1). Each new item arrives with one reveal card (2 s spin on a pedestal, one tap continues). No stat upgrades: they would break the fair pack (feel 24).
 
-Garage (outfits and skins): one "garage" disc on the track page, opening a single screen with big 240 px swatch discs. Out of the slice.
+Garage (outfits and skins): one "garage" disc on the world page, opening a single screen with big 240 px swatch discs. Out of the slice.
 
 ### 9.2 Free part (MWM Play)
 
 - The game holds `full_unlock: bool`, default `true`. Public hook `set_full_unlock(on: bool)` (owner), same style as Neon Bricks. The game never checks purchases itself.
-- `full_unlock == false`: **track 1 only, bike + hoverboard, outfit 2** (whatever finishes 1-2 unlock). Track 2+ and later cosmetics are never drawn. On every finish from total finish 3 onward, at most **once per app session**, the game emits `free_levels_finished` after the reward card closes; the shell then shows its "Du har spilt alle banene her" card. Replay keeps working forever.
-- `full_unlock == true`: all 6 tracks and all unlocks as earned.
+- `full_unlock == false`: **world 1 only, bike + hoverboard, outfit 2** (the hoverboard still unlocks on the first finish). World 2+ and later cosmetics are never drawn, and the card shows no "next world" disc. From the first finish on, at most **once per app session**, the game emits `free_levels_finished` after the reward card closes; the shell then shows its "Du har spilt alle banene her" card. Replay keeps working forever.
+- `full_unlock == true`: all 6 worlds, each opening when the previous one is finished.
 - The stand-alone build never calls the hook, so it is fully open (owner's own copy).
 
-Free part size: 1 of 6 tracks, both vehicles, about 3 races (about 3 minutes) before the shell card first shows (my calc).
+Free part size: 1 of 6 worlds, both vehicles. The shell card first shows after race 1 (about 1 minute); a child can keep replaying world 1 with its ghost (open question 11).
 
 ## 10. Screens and session shape
 
@@ -294,7 +365,7 @@ Free part size: 1 of 6 tracks, both vehicles, about 3 races (about 3 minutes) be
 | Step | Time | What |
 |---|---|---|
 | Engine boot + splash | ~2.0 s | Plain splash, logo only |
-| Scene load | <= 2.0 s | Straight into track 1 on first ever launch (no menu). Later launches: also straight into the last track played (my call; the track page is one home-tap away) |
+| Scene load | <= 2.0 s | Straight into world 1 on first ever launch (no menu). Later launches: straight into the newest open world not yet finished, else the last world played (my call; the world page is one home-tap away) |
 | Pre-race | until touch, max `AUTO_START_S` (4.0 s; 3.0 s on first launch) | Rider on the start line, camera eases from a front 3/4 view to the chase view over 1.0 s. Two hand icons press the left and right halves in turn (loop 1.6 s) |
 | Gate lights | `START_LIGHTS_S` 1.2 s | 3 lamps light 0.4 s apart with rising soft marimba blips, then the gate drops: GO |
 | Racing | | |
@@ -307,27 +378,27 @@ Worst case about 9.2 s from icon tap to GO (my calc).
 2. Card fades in over 250 ms (instant under less motion). Contents, no text:
    - **Trophy by place:** 1st gold cup, 2nd silver cup, 3rd bronze cup, 4th-6th a "finish flag" rosette. Every finish gets one (rule 30). The player's rider stands on the podium for 1-3, beside it for 4-6.
    - **Time** in digits, 64 px.
-   - **Ghost line:** ghost icon + green up-arrow and star burst if this run beat the saved best ("new best"); ghost icon + the saved best time if not. First race: no ghost line.
-   - **Discs** at y 1420 (all >= 200 px, act on release): **home** (x 270, dia 200) to the track page; **replay** (x 810, dia 240, the most visible); **next track** (x 540, dia 200) only when a next track is unlocked and not yet raced.
+   - **Ghost line:** ghost icon + green up-arrow and star burst if this run beat the saved best for this world ("new best"); ghost icon + the saved best time if not. First run in a world: no ghost line.
+   - **Discs** at y 1420 (all >= 200 px, act on release): **home** (x 270, dia 200) to the world page. When a next world is open and not yet raced: **next world** (x 810, dia 240, the most visible, showing a small picture of that world) and **replay** (x 540, dia 200). Otherwise: **replay** (x 810, dia 240). After world 6: replay and home only.
 3. Spoken praise of the action, when a voice exists (rule 32): "Du kom i mål!" ("You reached the finish!"), 1st: "Du vant løpet!" ("You won the race!"). Blocked on the native Norwegian voice (same as Neon Bricks).
 4. Unlock reveal card (if any) after the first tap on any disc, then the chosen action.
 5. **Never auto-advances** (rule 26). Emits `level_card_shown(track_id)` so the shell's play limit can end here.
 
 What counts as a **win**: crossing the finish line in 1st place. Results that matter for saves: best place and best time per track, total finishes.
 
-### 10.4 Track page (stand-alone home, and the shell's "home inside the game")
+### 10.4 World page (stand-alone home, and the shell's "home inside the game")
 
-Cards 440 x 380 in a 2-column grid from y 300, one per unlocked track, each with its picture and its best trophy shape. Garage disc bottom-right of the grid (above y 1664). Gear top-right. Slice: one card.
+Cards 440 x 380 in a 2-column grid from y 300, one per open world, each with its picture and its best trophy shape. Unopened worlds are not drawn. Garage disc bottom-right of the grid (above y 1664). Gear top-right. Slice: two cards once world 2 is open.
 
 ### 10.5 First 60 seconds (no text anywhere)
 
-- 0 s: launch -> track 1 pre-race (10.2). Hand icons show "hold here or here".
+- 0 s: launch -> world 1 pre-race (10.2). Hand icons show "hold here or here".
 - ~5-9 s: GO. In Lett, a child holding nothing rides the kid line and still passes riders.
 - 7 s without touch during the race (rule 18): a hand icon pulses on the side toward the next pad for 2 s.
 - ~10 s: boost meter full. Race 1 only: a hand taps the boost disc once; Lett auto-fires 2 s later anyway.
 - ~9 s: first jump K1 with an automatic trick.
 - ~44 s: finish, trophy card.
-- Race 2: gates come alive, slow-mo at G1 shows the swap; the ghost of race 1 rides along.
+- Race 2 (the card's biggest disc): **world 2, Red Canyon**, a new place; gates come alive, slow-mo at G1 shows the swap. No ghost, because it is the first run there.
 
 ### 10.6 Session shape
 
@@ -343,12 +414,15 @@ Pauses the race (time scale 0, audio paused except the panel's own blips). Rows 
 - Close: big "play" disc (240 px) at y 1450 resumes on release.
 Copy `NbSettings.gd` and `NbMain._open_settings/_close_settings` from `projects/mwm-neon-bricks/`. Inside MWM Play the shell's sound, music, haptics and less-motion settings win; the game shows only volume sliders and the ghost toggle there (my call).
 
-### 10.8 Ghost (owner: on by default, local, offline)
+### 10.8 Ghost (owner: on by default, local, offline; reworked 13:05 after QA finding 1)
 
-- Record the player's s, x, h and vehicle id at `GHOST_HZ` (10 Hz) during each race. On a new best time for that track, save it (one ghost per track, any mode).
-- Playback: linear interpolation, translucent (40% opacity), cool white tint, no shadow, no collision, not counted in places, no icon on the progress bar (my call: it is "you", not a rival). Shown from the second finish on a track.
-- Ghost uses the vehicle it rode at each moment (a pre-hoverboard ghost stays on the bike).
-- Size: ~45 s x 10 Hz x 4 numbers = 1,800 numbers per track, about 12 KB of JSON (my calc).
+- **What it is:** your best run on THIS world, nothing else. One ghost per world, best time from either mode.
+- **When it shows:** only when the player races a world they have finished before. **Never on a world's first run.** Never a ghost from another world.
+- **Record:** the player's s, x, h and vehicle id at `GHOST_HZ` (10 Hz). On a new best time for that world, save it.
+- **Fade near the player (QA finding 1: the ghost hid the child's own rider 40% of race 2):** `d = sqrt(ds^2 + dx^2)` between ghost and player. Opacity = `GHOST_ALPHA * clamp((d - GHOST_FADE_NEAR_M) / (GHOST_FADE_FAR_M - GHOST_FADE_NEAR_M), 0, 1)` with near 4 m and far 6 m: fully visible from 6 m, gone at 4 m and closer. Hide it entirely (not just alpha 0) under 4 m so it costs no draw.
+- **Look:** translucent (max 40% opacity), cool white tint, no shadow, no collision, not counted in places, no icon on the progress bar (it is "you", not a rival).
+- Uses the vehicle it rode at each moment (a pre-hoverboard ghost stays on the bike).
+- Size: ~45 s x 10 Hz x 4 numbers = 1,800 numbers per world, about 12 KB of JSON (my calc).
 
 ### 10.9 Save (`user://mwm_race_riders_save.json`)
 
@@ -358,9 +432,9 @@ Copy `NbSettings.gd` and `NbMain._open_settings/_close_settings` from `projects/
   "finishes": 4,
   "hover_unlocked": true,
   "seen_first_swap": true,
-  "tracks": {"1": {"best_time": 42.31, "best_place": 1, "won": true, "ghost": [[0.0, 0.0, 0.0, 0], [2.1, 0.0, 0.0, 0]]}},
+  "worlds": {"1": {"best_time": 42.31, "best_place": 1, "won": true, "ghost": [[0.0, 0.0, 0.0, 0], [2.1, 0.0, 0.0, 0]]}},
   "cosmetics": {"outfit": 2, "bike": 1, "board": 1, "owned": ["outfit2", "board2"]},
-  "last_track": 1,
+  "last_world": 1,
   "difficulty": "lett",
   "settings": {"sfx_on": true, "sfx_vol": 80, "music_on": true, "music_vol": 60, "ghost": true, "haptics": false, "less_motion": false}
 }
@@ -384,7 +458,10 @@ Ghost rows are `[s, x, h, vehicle]`, rounded to 2 decimals. Save on finish, on s
 | Trick | Animation 0.6 s | Short swish | none | same |
 | Landing | Squash: scale y 0.80 / xz 1.10 in 0.08 s, spring back over 0.18 s; dust ring; camera dip 0.08 m for 0.15 s | Thump + suspension creak (bike) or soft hover "fwump" | 25 ms | No squash, no dip; dust stays |
 | Big landing (>= 1.2 s air) | + star popup (icon, 400 ms) | + bright chime | 30 ms | Popup stays |
-| Bump | Both riders wobble: roll +-12 deg at 3 Hz, decaying over 0.5 s | Soft rubbery "bonk" | 15 ms | No roll, small colour blink once |
+| Knock-off (player hits rival) | Rival tips over away from the player and slides to the rail (4.7 fall table); dust burst at the contact, 30 particles, 0.8 s; **camera shake** 0.10 m for 0.2 s, decaying; small tumbling-bike icon over the rival, 500 ms; place badge pops if the place changes | Hard shoulder thud + bike clatter + gravel skid (board: clack + scrape) | 35 ms | No shake, no dust; the fall itself stays (it is game information) |
+| Rival gets up and rejoins | Sits up, lifts the vehicle, remounts, 0.5 s | Short pedal whirr / hover spin-up | none | same |
+| Nudge (rival hits player) | Player sways 6 deg for 0.3 s and slides sideways 0.25 s, small side dust; then recentres | Soft side thud | 15 ms | No sway, no dust |
+| Rival-rival bump | Both wobble: roll +-12 deg at 3 Hz, decaying over 0.5 s | Muted thud | none | No roll |
 | Rail scrape | Dust puffs | Scrape loop | none | No dust |
 | Hay bale | Straw burst, 20 particles, 0.6 s | Soft "pff" | 10 ms | Bale vanishes |
 | Overtake | Tiny "+" sparkle over the passed rider, place badge pops 1.15x for 150 ms | Light "tick-up" blip | none | No pop |
@@ -397,7 +474,7 @@ Ghost rows are `[s, x, h, vehicle]`, rounded to 2 decimals. Save on finish, on s
 
 **Flash safety:** global limiter, at most 3 bright flashes per second (rule 37, owner); a pad chain within 333 ms shows chevrons but only one flare. No full-screen flashes. Pad chevrons are static, they glow, they do not scroll.
 
-**Music (owner):** `assets/music/race_riders_theme.ogg`, 18.7 min long (my measurement, ffprobe 1123.9 s). Starts at the first pre-race, loops, and keeps playing across races and cards (it does not restart each race). Sits at least 6 dB under effects. Credit line: "Music supplied by the game owner." No source details anywhere.
+**Music (owner):** `assets/music/race_riders_theme.ogg`, 92.6 min long (QA full decode, `docs/QA_SLICE_2026-10-06.md`; my earlier 18.7 min came from an ffprobe header estimate and was wrong). Starts at the first pre-race, loops, and keeps playing across races and cards (it does not restart each race). Sits at least 6 dB under effects. Credit line: "Music supplied by the game owner." No source details anywhere.
 
 **SFX (owner: modern):** build with Neon Bricks' `tools/render_sfx.py` method (own synthesis + Kenney CC0 samples), peaks about -10 dBFS.
 
@@ -418,8 +495,8 @@ class_name RrBalance
 extends RefCounted
 ## All MWM Race Riders tunables. Source: docs/GDD.md. Sim: tools/pack_sim.py.
 
-# Race and track 1
-const TRACK1_LENGTH_M: float = 950.0
+# Race (per-world lengths under Unlocks)
+const TRACK1_LENGTH_M: float = 950.0           # kept for the current build; = WORLD_LENGTH_M[0]
 const RUNOUT_M: float = 60.0
 const RIDER_COUNT: int = 6                     # player + 5 AI (owner)
 const AI_START_GAP_M: float = 3.0              # AI at s 3, 6, 9, 12, 15; player at 0
@@ -429,7 +506,7 @@ const AI_LANE_OFFSETS: Array[float] = [-3.0, 3.0, -1.5, 1.5, 0.0]
 const CRUISE_MPS: float = 20.0
 const ACCEL_UP: float = 7.0                    # m/s^2
 const ACCEL_DOWN: float = 12.0
-const MIN_SPEED_FRAC: float = 0.6              # never below 12 m/s after GO
+const MIN_SPEED_FRAC: float = 0.6              # never below 12 m/s after GO (except a fallen rival)
 const STEEP_MULT: float = 1.05                 # Bratthenget section
 const HOVER_SMOOTH_MULT: float = 1.06
 const RUNOUT_MULT: float = 0.5
@@ -467,7 +544,8 @@ const BOOST_MULT: float = 1.40
 
 # Jumps
 const GRAVITY: float = 22.0                    # m/s^2, game gravity
-const KICKER_AIR_S: Array[float] = [1.0, 1.2, 1.6, 1.0]   # K1-K4, track 1
+const KICKER_AIR_S: Array[float] = [1.0, 1.2, 1.6, 1.0]   # K1-K4, world 1
+const KICKER_AIR_S_W2: Array[float] = [1.0, 1.2, 1.8, 0.8] # K1-K4, world 2 (K3 = mesa gap)
 const TRICK_MIN_AIR_S: float = 0.8
 const TRICK_TIME_S: float = 0.6
 const LAND_BONUS_MIN_AIR_S: float = 1.2
@@ -480,11 +558,54 @@ const BUMP_DS_M: float = 1.4
 const BUMP_PUSH_MPS: float = 3.0
 const BUMP_PUSH_S: float = 0.2
 const BUMP_TIME_S: float = 0.5
-const BUMP_MULT_PLAYER: float = 0.95
+const BUMP_MULT_PLAYER: float = 1.0           # owner 12:42: contact never slows the player
 const BUMP_MULT_AI: float = 0.90
 const BUMP_PAIR_COOLDOWN_S: float = 1.0
-const HAY_MULT: float = 0.85
+
+# Knock-offs (player hits rival) and nudges (rival hits player)
+const KNOCK_DS_M: float = 1.0                  # side contact: |ds| below this
+const KNOCK_LAT_MIN_L: float = 1.0             # player lateral speed toward rival, m/s
+const KNOCK_LAT_MIN_V: float = 1.5
+const KNOCK_IMMUNE_S: float = 6.0              # after the rival rides again
+const FALL_DECEL: float = 40.0                 # m/s^2, 20 m/s to 0 in 0.5 s
+const FALL_SLIDE_LAT_MPS: float = 3.0          # slides toward the nearest rail
+const FALL_DOWN_S: float = 1.2                 # from the hit, incl. the slide
+const GETUP_S: float = 0.5
+const REJOIN_ACCEL: float = 10.0               # m/s^2
+const REJOIN_RB_OFF_FRAC: float = 0.9          # no rubber band until v >= 0.9 x target
+const NUDGE_PUSH_MPS: float = 2.5
+const NUDGE_PUSH_S: float = 0.25
+const RECENTRE_LAT_MPS: float = 2.0
+const RECENTRE_MAX_S: float = 1.0
+const RIVAL_LEAN_IN_L: float = 0.0
+const RIVAL_LEAN_IN_V: float = 0.25            # chance per check when side by side
+const RIVAL_LEAN_IN_EVERY_S: float = 2.0
+const RIVAL_LEAN_IN_M: float = 1.0
+const KNOCK_ICON_S: float = 0.5
+const HAY_MULT: float = 0.85               # W1 Block
 const HAY_TIME_S: float = 0.5
+const MUD_MULT: float = 0.90               # W1 Patch, bike and board
+const SAND_MULT_L: float = 0.94            # W2 Patch, hoverboard floats over
+const SAND_MULT_V: float = 0.88
+const ROLLER_TRIGGER_M: float = 40.0       # roller spawns when the player is this far before it
+const ROLLER_LAT_MPS_L: float = 2.0
+const ROLLER_LAT_MPS_V: float = 3.0
+const ROLLER_DIAM_M: float = 1.2
+const ROLLER_NUDGE_MPS: float = 2.0        # sideways, 0.25 s, no speed loss
+const ROLLER_NUDGE_S: float = 0.25
+const HOP_AIR_S: float = 0.4               # later worlds (logs, lava crust)
+const HINDRANCE_MIN_GAP_M: float = 60.0
+# Later worlds, not in the slice
+const ICE_LAT_MULT: float = 1.3
+const ICE_EASE_MULT: float = 2.0
+const SNOW_MULT: float = 0.90
+const ASH_MULT: float = 0.88
+const VENT_PERIOD_S: float = 2.0
+const VENT_AIR_S: float = 1.4
+const FORD_MULT_BIKE: float = 0.85
+const CONE_MULT: float = 0.95
+const RING_MULT: float = 1.25
+const RING_TIME_S: float = 1.0
 
 # Swap gates
 const SWAP_FX_S: float = 0.3
@@ -545,6 +666,12 @@ const LAND_SQUASH_IN_S: float = 0.08
 const LAND_SQUASH_OUT_S: float = 0.18
 const WOBBLE_DEG: float = 12.0
 const WOBBLE_HZ: float = 3.0
+const NUDGE_SWAY_DEG: float = 6.0
+const NUDGE_SWAY_S: float = 0.3
+const KNOCK_SHAKE_M: float = 0.10
+const KNOCK_SHAKE_S: float = 0.2
+const KNOCK_DUST_PARTICLES: int = 30
+const KNOCK_DUST_S: float = 0.8
 const HOVER_HEIGHT_M: float = 0.3
 const HOVER_BOB_M: float = 0.05
 const HOVER_BOB_HZ: float = 1.5
@@ -554,12 +681,16 @@ const MAX_FLASHES_PER_S: int = 3
 const GHOST_HZ: int = 10
 const GHOST_ALPHA: float = 0.4
 const GHOST_DEFAULT_ON: bool = true
+const GHOST_FADE_NEAR_M: float = 4.0       # hidden at or under this distance to the player
+const GHOST_FADE_FAR_M: float = 6.0        # full GHOST_ALPHA from here
 
 # Unlocks (total finishes)
 const UNLOCK_HOVER: int = 1
-const UNLOCK_TRACKS: Array[int] = [0, 3, 6, 9, 12, 15]   # finishes needed for track 1..6
-const FREE_TRACKS: int = 1
-const FREE_CARD_FROM_FINISH: int = 3
+const WORLD_COUNT: int = 6
+const WORLD_LENGTH_M: Array[float] = [950.0, 980.0, 1000.0, 980.0, 1000.0, 1050.0]
+# World N+1 opens on the first finish of world N (any place).
+const FREE_WORLDS: int = 1
+const FREE_CARD_FROM_FINISH: int = 1           # at most once per app session
 
 # Audio
 const SFX_VOL_DEFAULT: int = 80
@@ -571,8 +702,9 @@ const FINISH_DUCK_DB: float = -4.0
 ## 14. Vertical slice scope (what godot-android-dev builds first)
 
 In:
-1. Track 1 Furuløypa exactly as in table 6.1 (Path3D, widths, 10 pads, 4 kickers, 4 hay bales, 2 swap gates, finish gate, run-out, kid line curve).
-2. Rider in track space (section 4): steering by half-screen hold, latest touch wins, soft rails, speed model, pads with chains, boost disc + meter, jumps with automatic tricks (one animation per vehicle is enough), landing squash and bonus, bumps with wobble, hay.
+1. **World 1 Furuløypa** exactly as in 6.1 (Path3D, widths, 10 pads, 4 kickers, 4 hay bales, 2 mud puddles, 2 swap gates, finish gate, run-out, kid line curve) and **world 2 Ørkenjuvet** exactly as in 6.2 (10 pads, 4 kickers incl. the mesa gap, 3 sand drifts, 4 tumbleweeds, gas station, water tower), each with its own sky, light, fog colour and one weather emitter (pollen vs blowing sand). The owner must see the world change.
+1b. Hindrance types Block, Patch (with `hover_immune`) and Roller (4.8); Hop can wait.
+2. Rider in track space (section 4): steering by half-screen hold, latest touch wins, soft rails, speed model, pads with chains, boost disc + meter, jumps with automatic tricks (one animation per vehicle is enough), landing squash and bonus, hay, and contact per 4.7: player knock-offs with the rival fall/get-up/rejoin, nudge + auto-recentre on the player, rival-rival wobble, Vanlig lean-in.
 3. Bike + hoverboard, dormant gates in race 1, live gates after the first finish, reveal card, first-swap slow-mo.
 4. 5 AI with section 7 behaviour and rubber band, both modes.
 5. Lett / Vanlig, auto-steer and auto-boost in Lett.
@@ -581,11 +713,12 @@ In:
 8. Settings gear with two-tap guard and pause; effects and music on/off + volume; ghost toggle; difficulty; less motion; haptics.
 9. Music from `assets/music/race_riders_theme.ogg`; modern SFX set from section 11.
 10. `full_unlock` hook, both signals, `set_difficulty`, `save_game()`, save file, shell-home square free, nothing tappable at y >= 1664, flash limiter, PerfOverlay.
-11. Track page with one card (home target in stand-alone).
+11. World page with up to two cards (home target in stand-alone); world 2 opens on the first finish of world 1; the card's biggest disc goes to world 2.
+12. Ghost per world, never on a world's first run, faded out within 4 m of the player (10.8).
 
-Out: tracks 2-6, garage and cosmetics (save fields exist, no UI), voice lines, store art, gold trims.
+Out: worlds 3-6, Hop hindrance, garage and cosmetics (save fields exist, no UI), voice lines, store art, gold trims.
 
-Acceptance hints for game-qa: kids walk-through with sound off, touching nothing after launch: the race starts by itself, the rider finishes inside 50 s and the card appears (Lett). Log check: no rider's speed ever below 12 m/s after GO; never more than 3 flashes in any 1 s window during the P3-P5 chain; no touch target inside 0-232 x 0-232 or at y >= 1664; launch to GO <= 10 s on the 32-bit tablet; Vanlig skilled bot (all pads, instant boost) wins by >= 1.5 s in 9 of 10 runs; idle Lett bot finishes in the top 3 in 9 of 10 runs.
+Acceptance hints for game-qa: kids walk-through with sound off, touching nothing after launch: the race starts by itself, the rider finishes inside 50 s and the card appears (Lett). Log check: no rider's speed ever below 12 m/s after GO, except a rival inside its knock-off sequence; never more than 3 flashes in any 1 s window during the P3-P5 chain; no touch target inside 0-232 x 0-232 or at y >= 1664; launch to GO <= 10 s on the 32-bit tablet; Vanlig skilled bot (all pads, instant boost) wins by >= 1.5 s in 9 of 10 runs; idle Lett bot finishes in the top 3 in 9 of 10 runs; in world 2 the same idle Lett bot also finishes top 3 in 9 of 10 runs and never touches a sand drift; the ghost is never drawn on a world's first run and never within 4 m of the player (log check); the player's speed never drops on any contact (log check); a bot that holds toward every rival it passes knocks off at least 2 per race and never knocks the same rival twice within 6 s of it riding again.
 
 ## 15. Play together tip (rule 42, draft)
 
@@ -598,5 +731,11 @@ Acceptance hints for game-qa: kids walk-through with sound off, touching nothing
 3. **Free-card frequency.** **Default: `free_levels_finished` on finish 3, then at most once per app session.** Alternative: only once ever.
 4. **Unlocks counted on finishes, not wins.** **Default: finishes** (a 4-year-old progresses too); wins only add gold trims.
 5. **Ghost per track, shared by both modes.** **Default: one ghost per track, best time from either mode.** A Vanlig parent's ghost will then lead a Lett child's race. Alternative: one ghost per mode.
-6. **Hoverboard on track 1 smooth section only.** The kid line and AI numbers were simulated with the 1.06 hover bonus; if graphic-designer wants the board to look faster, raise `HOVER_SMOOTH_MULT` and re-run `tools/pack_sim.py`.
+6. **Hoverboard bonus.** The kid line and AI numbers were simulated with the 1.06 hover bonus; if graphic-designer wants the board to look faster, raise `HOVER_SMOOTH_MULT` and re-run `tools/pack_sim.py`.
 7. **Track names in Norwegian** (Furuløypa etc.) with English pairs, like Neon Bricks. **Default: yes.**
+8. **Vanlig got easier with knock-offs** (average player wins 67-75% vs 46% before, my calc). **Default: leave it** and judge on the phone; the first lever is `AI_SKILL_V` +0.01 across the board.
+9. **Knock-off threshold in Lett.** At 1.0 m/s, Lett auto-steer drift sometimes knocks a rival off by itself (0.6 per race when holding nothing). **Default: keep it**, because a young child seeing a rival fall is part of the fun. Alternative: raise `KNOCK_LAT_MIN_L` to 3.0 so only deliberate steering counts.
+10. **Fall look with the new realistic art.** The fall is a controlled tip-over and slide, the rider gets up unhurt, with no ragdoll and no pain sounds. **Default: that**, for a 4-7 audience; the art agent decides the animation.
+11. **Free part in MWM Play is world 1 only**, so the shell's "all levels played" card can show after the very first race. **Default: world 1 only, card at most once per session.** Alternative: worlds 1 and 2 free, so a trial child also sees a world change.
+12. **World names and settings** (table 6.0, realistic: pine forest, red canyon, glacier, volcanic ash, rainforest, night harbour). **Default: as listed.** The volcano keeps lava behind rails and never on the track; swap it for a quarry if the owner finds lava too scary for 4-year-olds.
+13. **Mud added to world 1** (2 puddles) so each world has 2+ hindrances. **Default: add them**; the current build has hay only.

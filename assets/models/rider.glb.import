@@ -3,7 +3,7 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://dk7u3df3tcinv"
+uid="uid://b0htf1ioapjc7"
 path="res://.godot/imported/rider.glb-d2b062bd33fd7afc99f7ac4b6ad4d2e8.scn"
 
 [deps]
@@ -39,4 +39,4 @@ materials/extract_format=0
 materials/extract_path=""
 _subresources={}
 gltf/naming_version=2
-gltf/embedded_image_handling=1
+gltf/embedded_image_handling=0

@@ -34,3 +34,11 @@ screenshots/raw/
 .vscode/
 .idea/
 *.swp
+
+# Realistic art pass (2026-10-06): raw CC0 downloads and bake intermediates stay on disk only
+assets/_raw/
+# Retired toy look, kept on disk for reference (moved out of use, not deleted)
+docs/mockups/old_toy/
+# Blender sources never go in git
+*.blend
+*.blend1

@@ -3,7 +3,7 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://cr30v1fdsbrna"
+uid="uid://but10ldgeeo4b"
 path="res://.godot/imported/bike.glb-5a479dc8598ed247ddcf6bdc3bd3af33.scn"
 
 [deps]
@@ -39,4 +39,4 @@ materials/extract_format=0
 materials/extract_path=""
 _subresources={}
 gltf/naming_version=2
-gltf/embedded_image_handling=1
+gltf/embedded_image_handling=0
