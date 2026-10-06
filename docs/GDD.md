@@ -12,7 +12,7 @@ Legend: **(owner)** = decided by the owner, do not reopen. **(feel N)** = row N 
 
 ## 1. Pitch
 
-Hold the left or right side of the screen to steer a mountain bike, and later a hoverboard, down a bright mountain trail against five friendly riders: hit glowing speed pads, fly off jumps, swap vehicles at magic gates and cross the finish in about 45 seconds; nobody ever crashes and everyone always finishes.
+Hold the left or right side of the screen to steer a mountain bike, and later a hoverboard, down a bright mountain trail against five rival riders: hit glowing speed pads, fly off jumps, swap vehicles at magic gates and cross the finish in about 45 seconds; nobody ever crashes and everyone always finishes.
 
 ## 2. Core loop
 

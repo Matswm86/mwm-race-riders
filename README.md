@@ -4,7 +4,7 @@
 
 <p align="center"><img src="docs/screenshots/02_midrace.jpg" alt="Gameplay: the fox rider on a red bike chases five toy riders down a sunny dirt trail" width="360"></p>
 
-A sunny toy downhill racer for Android, made for children (ages 4-7 on "Lett", 8+ on "Vanlig"). Hold the left or right side of the screen to steer a mountain bike, and later a hoverboard, down a mountain trail against five friendly riders: speed pads, jumps with automatic tricks, magic gates that swap your vehicle, and a finish in about 45 seconds. Nobody crashes and everyone finishes. No ads, no tracking, works offline, no Android permissions.
+A sunny toy downhill racer for Android, made for children (ages 4-7 on "Lett", 8+ on "Vanlig"). Hold the left or right side of the screen to steer a mountain bike, and later a hoverboard, down a mountain trail against five rival riders: speed pads, jumps with automatic tricks, magic gates that swap your vehicle, and a finish in about 45 seconds. Nobody crashes and everyone finishes. No ads, no tracking, works offline, no Android permissions.
 
 This is the **vertical slice**: track 1 "Furuløypa / Pine Run" (950 m) with 10 speed pads, 4 jumps, 4 hay bales, 2 swap gates and the finish arch; bike and hoverboard; 5 rival riders; Lett and Vanlig; boost; your own ghost; the reward card; settings. Design: `docs/GDD.md` (rules and numbers) and `docs/DESIGN.md` (look).
 
