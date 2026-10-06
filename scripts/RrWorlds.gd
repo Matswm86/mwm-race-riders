@@ -269,6 +269,9 @@ const W2: Dictionary = {
 	"tunnel": [],
 	"fence": [],
 	"river": [],
+	# Canyon set pieces for the ground generator: the slot canyon, the rim
+	# highway (= the smooth lane section), the mesa switchbacks and the town.
+	"zones": {"slot": [321.0, 453.0], "lane": [450.0, 930.0], "mesa": 930.0, "town": 1350.0},
 	"look":
 	{
 		"sky": "res://assets/textures/world2/sky_goegap_1k.exr",
@@ -285,9 +288,47 @@ const W2: Dictionary = {
 	},
 }
 
+## Evening light for the Pro variants (GDD 17.1): a sunset HDRI from the same
+## kind of place, a low warm sun behind the camera and warmer, thicker fog.
+## Keys override the world's day look.
+const EVENING: Dictionary = {
+	1:
+	{
+		"sky": "res://assets/textures/world1/sky_champagne_castle_1_1k.exr",
+		"sun_rot": Vector3(-16.0, 140.0, 0.0),
+		"sun_color": Color(1.000, 0.700, 0.460),
+		"sun_energy": 1.25,
+		"sky_energy": 0.9,
+		"fog_color": Color(0.780, 0.600, 0.470),
+		"fog_max": 0.5,
+		"fog_end": 380.0,
+	},
+	2:
+	{
+		"sky": "res://assets/textures/world2/sky_goegap_road_1k.exr",
+		"sun_rot": Vector3(-14.0, 140.0, 0.0),
+		"sun_color": Color(1.000, 0.640, 0.400),
+		"sun_energy": 1.4,
+		"sky_energy": 0.9,
+		"fog_color": Color(0.860, 0.560, 0.400),
+		"fog_max": 0.38,
+		"fog_end": 560.0,
+	},
+}
+
 
 static func get_def(id: int) -> Dictionary:
 	return W2 if id == 2 else W1
+
+
+## The world's look, with the evening preset on top for Pro tracks.
+static func look_for(id: int, evening: bool) -> Dictionary:
+	var l: Dictionary = (get_def(id)["look"] as Dictionary).duplicate()
+	if evening and EVENING.has(id):
+		var e: Dictionary = EVENING[id]
+		for k: String in e:
+			l[k] = e[k]
+	return l
 
 
 static func world_name(id: int) -> String:

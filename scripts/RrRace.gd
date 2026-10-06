@@ -58,7 +58,11 @@ var _bale_back: PackedFloat32Array = PackedFloat32Array()
 var _rng := RandomNumberGenerator.new()
 
 
-func setup(trk: RrTrack, is_easy: bool, hover: bool, seed_v: int = -1) -> void:
+## skills: the five rivals' skills, slowest first (a league heat, GDD 17.2);
+## empty = the AI table (AI_SKILL_L / _V), plus PRO_AI_SKILL_ADD on Pro tracks.
+func setup(
+	trk: RrTrack, is_easy: bool, hover: bool, seed_v: int = -1, skills: Array[float] = []
+) -> void:
 	track = trk
 	easy = is_easy
 	hover_on = hover
@@ -86,6 +90,10 @@ func setup(trk: RrTrack, is_easy: bool, hover: bool, seed_v: int = -1) -> void:
 		riders.append(r)
 		var ai := RrAi.new()
 		ai.setup(r, i, easy, _rng.randi())
+		if i < skills.size():
+			ai.skill = skills[i]
+		elif track.pro:
+			ai.skill += RrBalance.PRO_AI_SKILL_ADD
 		ais.append(ai)
 	_bale_back.resize(track.blocks.size())
 	_bale_back.fill(-1.0)
@@ -218,7 +226,7 @@ func _speed(r: RrRider, dt: float) -> void:
 	if r.knocked and r.fall_t < RrBalance.FALL_DOWN_S + RrBalance.GETUP_S:
 		# Thrown off: slows to a stop, lies down, gets up (GDD 4.7 fall table).
 		r.v = maxf(0.0, r.v - RrBalance.FALL_DECEL * dt)
-		r.s = minf(r.s + r.v * dt, RrTrack.S_MAX - 2.0)
+		r.s = minf(r.s + r.v * dt, track.s_max - 2.0)
 		return
 	var target: float = _target_speed(r)
 	if target > r.v:
@@ -235,7 +243,7 @@ func _speed(r: RrRider, dt: float) -> void:
 		r.reached_floor = true
 	if r.reached_floor and r.s < track.length and not r.knocked:
 		r.v = maxf(r.v, floor_v)
-	r.s = minf(r.s + r.v * dt, RrTrack.S_MAX - 2.0)
+	r.s = minf(r.s + r.v * dt, track.s_max - 2.0)
 
 
 func _ai_mult(r: RrRider) -> float:

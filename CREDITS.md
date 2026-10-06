@@ -9,6 +9,8 @@ Every third-party file below allows commercial use in a paid app. Raw downloads 
 |---|---|---|
 | `alps_field` | HDRI | World 1 sky and sun light (`assets/textures/world1/sky_alps_field_2k.hdr`) |
 | `goegap` | HDRI | World 2 sky and sun light (`assets/textures/world2/sky_goegap_2k.hdr`) |
+| `champagne_castle_1` | HDRI | World 1 Pro tracks, evening sky (`assets/textures/world1/sky_champagne_castle_1_1k.exr`) |
+| `goegap_road` | HDRI | World 2 Pro tracks, evening sky (`assets/textures/world2/sky_goegap_road_1k.exr`) |
 | `rocky_trail_02` | Texture (2K) | World 1 trail surface |
 | `rocky_trail` | Texture | World 1 rock outcrops, berm edge |
 | `forest_ground_04` | Texture | World 1 forest floor between the trees |

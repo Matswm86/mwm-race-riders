@@ -1,19 +1,32 @@
 class_name RrTrack
 extends RefCounted
 
-## One world's track (GDD 6.1 / 6.2) in track space: s = metres along the
+## One track (GDD 6.1 / 6.2, 17.1) in track space: s = metres along the
 ## centre line, x = metres to the right of it. The centre line is integrated
-## once at 1 m steps from the world's curvature and grade profile, so any s
+## once at 1 m steps from the track's curvature and grade profile, so any s
 ## maps to a position, a heading and a slope without a physics engine. A
 ## Path3D built from the same points is exposed for the scene (GDD 4). The
-## numbers live in RrWorlds; this class only answers questions about them.
+## numbers live in RrWorlds (track 1) and tracks/*.json (RrTracks); this
+## class only answers questions about them.
 
 const S_MIN: float = -60.0
-const S_MAX: float = 1580.0
 const STEP: float = 1.0
 const HAY_HALF_W: float = 0.8
 
 var world_id: int = 1
+## "w1_t3", "w2_t5p" ... (RrTracks), track number 1-8, Pro variant.
+var key: String = "w1_t1"
+var number: int = 1
+var pro: bool = false
+## Pro tracks mirror their base track: the scene reuses the base bake with
+## the world mirrored in X (a mirrored centre line is the world mirrored).
+var mirrored: bool = false
+## Last s with a centre line (length + run-out + margin).
+var s_max: float = 1580.0
+## Ground-generator set pieces (W2 slot canyon, rim lane, mesa, town).
+var zones: Dictionary = {}
+## Per-track scenery knobs for the generator (tree density, walls, seed).
+var flavor: Dictionary = {}
 ## GDD tables for this world (see RrWorlds).
 var sections: Array = []
 var widths: Array = []
@@ -44,9 +57,17 @@ var _yaw: PackedFloat32Array = PackedFloat32Array()
 var _grade: PackedFloat32Array = PackedFloat32Array()
 
 
-func _init(id: int = 1) -> void:
-	var d: Dictionary = RrWorlds.get_def(id)
+## id: a track key ("w2_t4p") or a world id (= that world's track 1).
+func _init(id: Variant = 1) -> void:
+	key = String(id) if id is String else RrTracks.key(int(id), 1)
+	var d: Dictionary = RrTracks.get_def(key)
 	world_id = int(d["id"])
+	number = int(d.get("track", 1))
+	pro = bool(d.get("pro", false))
+	mirrored = bool(d.get("mirrored", false))
+	s_max = float(d.get("s_max", 1580.0))
+	zones = d.get("zones", {})
+	flavor = d.get("flavor", {})
 	length = float(d["length"])
 	sections = d["sections"]
 	widths = d["widths"]
@@ -80,7 +101,7 @@ static func _range(a: Array) -> Vector2:
 
 
 func _integrate() -> void:
-	var n: int = int((S_MAX - S_MIN) / STEP) + 1
+	var n: int = int((s_max - S_MIN) / STEP) + 1
 	_pos.resize(n)
 	_yaw.resize(n)
 	_grade.resize(n)
@@ -196,6 +217,20 @@ func in_gap(s: float) -> bool:
 	return s >= gap.x and s < gap.y
 
 
+## A zone range from the track data ("slot", "lane"), or Vector2(-1, -1).
+func zone(name: String) -> Vector2:
+	var z: Variant = zones.get(name, [])
+	if z is Array and (z as Array).size() >= 2:
+		return Vector2(float(z[0]), float(z[1]))
+	return Vector2(-1.0, -1.0)
+
+
+## A single zone position ("mesa", "town"), or fallback.
+func zone_at(name: String, fallback: float) -> float:
+	var z: Variant = zones.get(name, fallback)
+	return float(z) if (z is float or z is int) else fallback
+
+
 ## Patch slow-down for a rider at (s, x) on a vehicle (GDD 4.8): 1.0 outside
 ## every patch; the hoverboard floats over sand.
 func patch_mult(s: float, x: float, board: bool, easy: bool) -> float:
@@ -224,7 +259,7 @@ func ramp_height(s: float) -> float:
 
 
 func _idx(s: float) -> Array:
-	var f: float = (clampf(s, S_MIN, S_MAX) - S_MIN) / STEP
+	var f: float = (clampf(s, S_MIN, s_max) - S_MIN) / STEP
 	var i: int = mini(int(f), _pos.size() - 2)
 	return [i, f - float(i)]
 
@@ -275,7 +310,7 @@ func world_point(s: float, x: float, h: float = 0.0) -> Vector3:
 func make_curve() -> Curve3D:
 	var c := Curve3D.new()
 	var s: float = S_MIN
-	while s <= S_MAX:
+	while s <= s_max:
 		c.add_point(center(s))
 		s += 10.0
 	return c

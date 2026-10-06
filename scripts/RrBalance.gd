@@ -236,3 +236,39 @@ const SWAP_HOP_M: float = 0.3
 const STEER_ARROW_S: float = 0.08
 const HINT_LOOP_S: float = 1.6
 const IDLE_HINT_SHOW_S: float = 2.0
+
+# Progression v2 (GDD 17.8)
+const WORLDS: int = 6
+const TRACKS_PER_WORLD: int = 8
+const TRACK_LENGTH_STEP_M: float = 25.0  # track k = WORLD_LENGTH_M[w] + 25 * (k - 1)
+const PRO_AI_SKILL_ADD: float = 0.01
+const PRO_EXTRA_HINDRANCES: int = 2
+const LEAGUES: Array[StringName] = [
+	&"bronze", &"silver", &"gold", &"platinum", &"diamond", &"champion"
+]
+const TIERS_PER_LEAGUE: int = 3
+const ROUNDS_PER_SEASON: int = 5
+const TABLE_RIVALS: int = 11
+const LEAGUE_POINTS: Array[int] = [10, 8, 6, 5, 4, 3]
+const PROMOTE_TOP: int = 3
+const LETT_SAFETY_SEASONS: int = 2
+const VANLIG_DEMOTE_BOTTOM: int = 2
+const DEMOTION_DEFAULT_ON: bool = false
+const RIVAL_SKILL_BASE_L: Array[float] = [
+	0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1.00
+]
+const RIVAL_SKILL_BASE_V: Array[float] = [
+	0.89, 0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99
+]
+const LEAGUE_SKILL_STEP_L: float = 0.006  # per league; a third per tier
+const LEAGUE_SKILL_STEP_V: float = 0.01
+const RIVAL_HEAT_NOISE: float = 0.025  # seeded rival-only heat
+const RIVAL_FORM_STEP: float = 0.01  # -1, 0 or +1 step after an absence
+const RIVAL_FORM_AWAY_H: float = 8.0
+const BOARD_TIME_NOISE: float = 0.015
+const MEDAL_PAR_MULT: Array[float] = [1.01, 1.04, 1.08]  # gold, silver, bronze
+const FREE_TRACKS_W1: int = 5  # = Bronze III
+const FREE_LEAGUE_TIERS: int = 1
+# Builder additions for progression v2
+const LEAGUES_BUILT: int = 2  # Bronze (world 1) and Silver (world 2)
+const TABLE_SLIDE_S: float = 1.5  # league table rows slide to their new places
