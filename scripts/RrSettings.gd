@@ -4,25 +4,22 @@ extends Control
 ## Settings panel (GDD 10.7), adult-facing, opened from the gear in every
 ## race and on the card. The race is paused while it is open. Rows: Lett /
 ## Vanlig, effects on/off + volume, music (note icon) on/off + volume, ghost,
-## "Mindre bevegelse", Grafikk Høy / Lav (owner).
-## The big play disc at the bottom closes it and resumes
-## on release. Inside MWM Play only the two volume sliders and the ghost
-## toggle are shown (the shell owns the rest). Copied from NbSettings.
+## "Mindre bevegelse", Grafikk Høy / Lav (owner). The big play disc at the
+## bottom closes it and resumes on release. Inside MWM Play only the two
+## volume sliders, the ghost and graphics rows are shown (the shell owns the
+## rest), and the rows close up with no gaps (QA finding 10).
 
 signal closed
 ## The effects slider was let go: the host plays one sample at the new level.
 signal sfx_preview
 
-const CARD := Color(1.000, 0.973, 0.933)
-const CARD_EDGE := Color(0.561, 0.514, 0.443)
-const INK := Color(0.141, 0.129, 0.114)
-const ON := Color(1.0, 0.824, 0.247)
-const OFF := Color(1.0, 1.0, 1.0)
+const INK := Color(0.078, 0.090, 0.110)
+const WHITE := Color(1, 1, 1)
 const DIM := Color(0.0, 0.0, 0.0, 0.55)
 const PANEL := Rect2(90, 240, 900, 1416)
-const MUSIC_ICON_AT := Vector2(205, 832)
-const TRACK := Color(0.851, 0.820, 0.773)
+const TRACK := Color(1, 1, 1, 0.25)
 const KNOB_PX: int = 84
+const TOP_Y: float = 340.0
 
 var play_disc: RrDisc
 var _lett: Button
@@ -34,73 +31,75 @@ var _motion: Button
 var _quality: Button
 var _sfx_slider: HSlider
 var _music_slider: HSlider
-var _shell_hidden: Array[Control] = []
+## [controls, height, shell_visible, music icon row]
+var _rows: Array = []
+var _music_icon_y: float = -1.0
 
 
 func _ready() -> void:
 	size = Vector2(RrBalance.DESIGN_W, RrBalance.DESIGN_H)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var th := Theme.new()
-	th.default_font = RrDraw.font()
-	th.default_font_size = 44
+	th.default_font = RrDraw.font("SemiBold")
+	th.default_font_size = 46
 	theme = th
 	_heading("Innstillinger", Vector2(150, 262))
-	_shell_hidden.append(_label("Vanskelighet (neste løp)", Vector2(150, 338)))
-	_lett = _button("Lett", Rect2(150, 395, 360, 130))
-	_vanlig = _button("Vanlig", Rect2(570, 395, 360, 130))
-	_shell_hidden.append(_lett)
-	_shell_hidden.append(_vanlig)
+	var diff_label: Label = _label("Vanskelighet (neste løp)")
+	_lett = _button("Lett", 360.0)
+	_vanlig = _button("Vanlig", 360.0)
 	_lett.pressed.connect(func() -> void: _set_easy(true))
 	_vanlig.pressed.connect(func() -> void: _set_easy(false))
-	_label("Lyd", Vector2(150, 572))
-	_sound = _button("", Rect2(570, 540, 360, 130))
-	_shell_hidden.append(_sound)
+	_rows.append([[diff_label], 58.0, false, false])
+	_rows.append([[_lett, _vanlig], 150.0, false, false])
+	_sound = _button("", 360.0)
 	_sound.pressed.connect(
 		func() -> void:
 			RaceRiders.set_sfx_on(not RaceRiders.sfx_on)
 			refresh()
 	)
-	_sfx_slider = _slider(Rect2(150, 675, 780, 90))
+	_rows.append([[_label("Lyd"), _sound], 150.0, false, false])
+	_sfx_slider = _slider()
 	_sfx_slider.value_changed.connect(func(v: float) -> void: RaceRiders.set_sfx_volume(v, false))
 	_sfx_slider.drag_ended.connect(
 		func(_changed: bool) -> void:
 			RaceRiders.save_game()
 			sfx_preview.emit()
 	)
-	_music = _button("", Rect2(570, 770, 360, 130))
-	_shell_hidden.append(_music)
+	_rows.append([[_sfx_slider], 110.0, true, false])
+	_music = _button("", 360.0)
 	_music.pressed.connect(
 		func() -> void:
 			RaceRiders.set_music_on(not RaceRiders.music_on)
 			refresh()
 	)
-	_music_slider = _slider(Rect2(150, 905, 780, 90))
+	_rows.append([[_music], 150.0, false, true])
+	_music_slider = _slider()
 	_music_slider.value_changed.connect(
 		func(v: float) -> void: RaceRiders.set_music_volume(v, false)
 	)
 	_music_slider.drag_ended.connect(func(_changed: bool) -> void: RaceRiders.save_game())
-	_label("Spøkelse", Vector2(150, 1032))
-	_ghost = _button("", Rect2(570, 1000, 360, 130))
+	_rows.append([[_music_slider], 120.0, true, true])
+	_ghost = _button("", 360.0)
 	_ghost.pressed.connect(
 		func() -> void:
 			RaceRiders.set_ghost_on(not RaceRiders.ghost_on)
 			refresh()
 	)
-	_shell_hidden.append(_label("Mindre bevegelse", Vector2(150, 1172)))
-	_motion = _button("", Rect2(570, 1140, 360, 130))
-	_shell_hidden.append(_motion)
+	_rows.append([[_label("Spøkelse"), _ghost], 150.0, true, false])
+	_motion = _button("", 360.0)
 	_motion.pressed.connect(
 		func() -> void:
 			RaceRiders.set_less_motion(not RaceRiders.less_motion)
 			refresh()
 	)
-	_label("Grafikk", Vector2(150, 1312))
-	_quality = _button("", Rect2(570, 1280, 360, 130))
+	_rows.append([[_label("Mindre bevegelse"), _motion], 150.0, false, false])
+	_quality = _button("", 360.0)
 	_quality.pressed.connect(
 		func() -> void:
 			RaceRiders.set_quality_high(not RaceRiders.quality_high)
 			refresh()
 	)
+	_rows.append([[_label("Grafikk"), _quality], 150.0, true, false])
 	# Close = big play disc, kept above the wrist strip (y < 1664).
 	play_disc = RrDisc.new()
 	play_disc.icon = "play"
@@ -118,10 +117,42 @@ func open() -> void:
 	RrDisc.block_input(int(RrBalance.HOLDOVER_S * 1000.0))
 
 
-func refresh() -> void:
+## Lay the visible rows out top to bottom with no gaps.
+func _layout() -> void:
 	var shell: bool = RaceRiders.in_shell()
-	for c: Control in _shell_hidden:
-		c.visible = not shell
+	var y: float = TOP_Y
+	_music_icon_y = -1.0
+	for row: Array in _rows:
+		var show: bool = not shell or bool(row[2])
+		var ctl: Array = row[0]
+		for c: Control in ctl:
+			c.visible = show
+		if not show:
+			continue
+		var h: float = row[1]
+		var icon_row: bool = bool(row[3]) and _music_icon_y < 0.0
+		if icon_row:
+			_music_icon_y = y + h * 0.5 - (10.0 if ctl[0] is HSlider else 0.0)
+		if ctl.size() == 2 and ctl[0] is Button:
+			(ctl[0] as Control).position = Vector2(150, y)
+			(ctl[1] as Control).position = Vector2(570, y)
+		elif ctl.size() == 2:
+			(ctl[0] as Control).position = Vector2(150, y + 34.0)
+			(ctl[1] as Control).position = Vector2(570, y)
+		elif ctl[0] is HSlider:
+			var sl: Control = ctl[0]
+			sl.position = Vector2(290 if icon_row else 150, y)
+			sl.size = Vector2(640 if icon_row else 780, 90)
+		elif ctl[0] is Button:
+			(ctl[0] as Control).position = Vector2(570, y)
+		else:
+			(ctl[0] as Control).position = Vector2(150, y)
+		y += h
+	queue_redraw()
+
+
+func refresh() -> void:
+	_layout()
 	_style(_lett, RaceRiders.easy)
 	_style(_vanlig, not RaceRiders.easy)
 	_sound.text = "På" if RaceRiders.sfx_on else "Av"
@@ -146,40 +177,37 @@ func _set_easy(on: bool) -> void:
 func _heading(t: String, at: Vector2) -> void:
 	var l := Label.new()
 	l.text = t
-	l.add_theme_font_size_override("font_size", 56)
-	l.add_theme_color_override("font_color", INK)
+	l.add_theme_font_size_override("font_size", 60)
+	l.add_theme_color_override("font_color", WHITE)
 	l.position = at
 	add_child(l)
 
 
-func _label(t: String, at: Vector2) -> Label:
+func _label(t: String) -> Label:
 	var l := Label.new()
 	l.text = t
-	l.add_theme_color_override("font_color", INK)
-	l.position = at
+	l.add_theme_color_override("font_color", WHITE)
 	add_child(l)
 	return l
 
 
-func _button(t: String, r: Rect2) -> Button:
+func _button(t: String, w: float) -> Button:
 	var b := Button.new()
 	b.text = t
-	b.position = r.position
-	b.size = r.size
+	b.size = Vector2(w, 130)
 	b.focus_mode = Control.FOCUS_NONE
 	add_child(b)
 	return b
 
 
-## Volume slider 0..1: thick track, sun fill, a large round knob so a thumb
-## can grab it.
-func _slider(r: Rect2) -> HSlider:
+## Volume slider 0..1: thick track, white fill, a large round knob so a
+## thumb can grab it.
+func _slider() -> HSlider:
 	var s := HSlider.new()
 	s.min_value = 0.0
 	s.max_value = 1.0
 	s.step = 0.05
-	s.position = r.position
-	s.size = r.size
+	s.size = Vector2(780, 90)
 	s.focus_mode = Control.FOCUS_NONE
 	var track := StyleBoxFlat.new()
 	track.bg_color = TRACK
@@ -188,7 +216,7 @@ func _slider(r: Rect2) -> HSlider:
 	track.content_margin_bottom = 14.0
 	s.add_theme_stylebox_override("slider", track)
 	var fill := StyleBoxFlat.new()
-	fill.bg_color = ON
+	fill.bg_color = WHITE
 	fill.set_corner_radius_all(14)
 	fill.content_margin_top = 14.0
 	fill.content_margin_bottom = 14.0
@@ -209,38 +237,31 @@ func _knob() -> Texture2D:
 			var d: float = Vector2(x + 0.5 - c, y + 0.5 - c).length()
 			var col: Color = Color(0, 0, 0, 0)
 			if d <= c - 1.0:
-				col = INK if d > c - 7.0 else OFF
+				col = WHITE if d > c - 7.0 else INK
 			elif d <= c:
-				col = Color(INK, c - d)
+				col = Color(WHITE, c - d)
 			img.set_pixel(x, y, col)
 	return ImageTexture.create_from_image(img)
 
 
+## On = white with ink text, off = ink with a white ring and white text.
 func _style(b: Button, on: bool) -> void:
 	for state: String in ["normal", "hover", "pressed", "hover_pressed"]:
 		var sb := StyleBoxFlat.new()
-		sb.bg_color = ON if on else OFF
-		sb.border_color = INK
-		sb.set_border_width_all(5)
+		sb.bg_color = WHITE if on else INK
+		sb.border_color = WHITE
+		sb.set_border_width_all(4)
 		sb.set_corner_radius_all(70)
 		sb.anti_aliasing = true
 		b.add_theme_stylebox_override(state, sb)
 	for c: String in [
 		"font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"
 	]:
-		b.add_theme_color_override(c, INK)
+		b.add_theme_color_override(c, INK if on else WHITE)
 
 
 func _draw() -> void:
 	draw_rect(Rect2(Vector2(-2000, -2000), Vector2(6000, 6000)), DIM)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = CARD
-	sb.border_color = CARD_EDGE
-	sb.set_border_width_all(4)
-	sb.set_corner_radius_all(56)
-	sb.anti_aliasing = true
-	draw_style_box(sb, PANEL)
-	if not RaceRiders.in_shell():
-		RrDisc.draw_icon(self, "music", MUSIC_ICON_AT, 56.0, INK)
-	else:
-		RrDisc.draw_icon(self, "music", Vector2(205, 870), 56.0, INK)
+	RrDraw.panel(self, PANEL)
+	if _music_icon_y >= 0.0:
+		RrDisc.draw_icon(self, "music", Vector2(205, _music_icon_y), 56.0, WHITE)

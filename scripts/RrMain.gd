@@ -1,15 +1,15 @@
 class_name RrMain
 extends Node
 
-## Root of MWM Race Riders: the 3D world, the HUD, the card, the track page,
-## settings and the race controller. Every launch goes straight into a race
-## on track 1 (GDD 10.2). Touches are read here (GDD 3): hold the left or
-## right half to steer (latest touch wins), the centre boost disc acts on
-## release, the home and gear squares and the wrist strip never steer.
+## Root of MWM Race Riders: the 3D world, the HUD, the card, the world page,
+## settings and the race controller. Every launch goes straight into a race:
+## world 1 the first time, then the newest open world not yet finished
+## (GDD 10.2). Every world is its own place; finishing world N opens N+1.
+## Touches are read here (GDD 3): hold the left or right half to steer
+## (latest touch wins), the centre boost disc acts on release, the home and
+## gear squares and the wrist strip never steer.
 ## Inside MWM Play (Engine meta "mwm_play_shell") the own home disc and the
 ## back button are left to the shell.
-
-const TRACK_ID: int = 1
 
 ## Test hooks: a fake top safe-area inset in window px (< 0 = ask the
 ## display), and a bot that steers instead of touches (-1, 0, 1 or a Callable).
@@ -20,6 +20,7 @@ var paused: bool = false
 ## Owner rule: drop to Lav when fps stays under 45 for 3 s in a race.
 var auto_quality: bool = true
 
+var world_id: int = 0
 var track: RrTrack
 var race: RrRace
 var world: RrWorld
@@ -60,10 +61,6 @@ var _quality_applied: int = -1
 
 
 func _ready() -> void:
-	track = RrTrack.new()
-	world = RrWorld.new()
-	add_child(world)
-	world.setup(track)
 	sfx = RrSfx.new()
 	add_child(sfx)
 	music = RrMusic.new()
@@ -85,11 +82,12 @@ func _ready() -> void:
 	screen_root.add_child(center_frame)
 	page = RrTrackPage.new()
 	center_frame.add_child(page)
-	page.track_chosen.connect(func(_id: int) -> void: start_race())
+	page.track_chosen.connect(func(id: int) -> void: start_race(id))
 	card = RrCard.new()
 	center_frame.add_child(card)
 	card.replay_pressed.connect(_on_card_replay)
 	card.home_pressed.connect(_on_card_home)
+	card.next_pressed.connect(_on_card_next)
 	settings = RrSettings.new()
 	center_frame.add_child(settings)
 	settings.closed.connect(_close_settings)
@@ -108,7 +106,25 @@ func _ready() -> void:
 	RaceRiders.settings_changed.connect(_apply_settings)
 	get_viewport().size_changed.connect(_layout)
 	_layout()
-	start_race()
+	start_race(RaceRiders.launch_world())
+
+
+## Build the 3D scene of a world (one RrWorld per world; the old one goes).
+func _load_world(id: int) -> void:
+	if id == world_id and world != null:
+		return
+	if world != null:
+		remove_child(world)
+		world.queue_free()
+	world_id = id
+	track = RrTrack.new(id)
+	world = RrWorld.new()
+	add_child(world)
+	move_child(world, 0)
+	world.setup(track)
+	world.apply_quality(RaceRiders.quality_high)
+	_quality_applied = 1 if RaceRiders.quality_high else 0
+	hud.world = world
 
 
 func _guard_disc(icon: String) -> RrHomeDisc:
@@ -131,7 +147,6 @@ func _apply_settings() -> void:
 	if q != _quality_applied:
 		_quality_applied = q
 		world.apply_quality(RaceRiders.quality_high)
-	hud.gpu_lines = RaceRiders.quality_high
 	hud.less_motion = RaceRiders.less_motion
 	card.less_motion = RaceRiders.less_motion
 	var shell: bool = RaceRiders.in_shell()
@@ -152,8 +167,10 @@ func _layout() -> void:
 
 ## Home disc and gear move below a camera cutout; their touch areas still run
 ## to the screen corner (copied from ball-connect 7ad7d50 via Neon Bricks).
+## The HUD band (bar, place disc, time) moves down by the same amount.
 func apply_safe_area() -> void:
-	var dy: float = maxf(0.0, safe_top_inset() - RrBalance.TOP_ROW_CLEAR)
+	var dy: float = top_shift()
+	hud.top_dy = dy
 	var hit: float = RrBalance.HOME_HIT
 	home.position = Vector2.ZERO
 	home.size = Vector2(hit, hit + dy)
@@ -164,6 +181,11 @@ func apply_safe_area() -> void:
 	gear.size = Vector2(hit, hit + dy)
 	gear.disc_center = Vector2(hit - 104.0, 104.0 + dy)
 	gear.queue_redraw()
+
+
+## How far the top row moves down for a camera cutout (px).
+func top_shift() -> float:
+	return maxf(0.0, safe_top_inset() - RrBalance.TOP_ROW_CLEAR)
 
 
 ## Depth of the top screen cutout in viewport px (0 on desktop).
@@ -182,7 +204,13 @@ func safe_top_inset() -> float:
 # ---------------------------------------------------------------- flow
 
 
-func start_race() -> void:
+## Start a race on world id (-1 = the world raced last).
+func start_race(id: int = -1) -> void:
+	if id < 0:
+		id = world_id if world_id > 0 else RaceRiders.launch_world()
+	if not id in RaceRiders.open_worlds():
+		id = RaceRiders.launch_world()
+	_load_world(id)
 	screen = "race"
 	paused = false
 	race = RrRace.new()
@@ -190,8 +218,10 @@ func start_race() -> void:
 	world.make_racers(race)
 	world.set_gates_live(RaceRiders.hover_unlocked)
 	world.reset_camera(race)
+	# GDD 10.8: the ghost is your best run on THIS world, so a world's first
+	# run never has one (QA finding 1).
 	ghost = null
-	var rows: Array = RaceRiders.ghost_rows(TRACK_ID)
+	var rows: Array = RaceRiders.ghost_rows(world_id)
 	if RaceRiders.ghost_on and rows.size() > 1:
 		ghost = RrGhost.new(rows)
 	hud.race = race
@@ -247,25 +277,42 @@ func _show_card() -> void:
 	hud.visible = false
 	var p: RrRider = race.player
 	var res: Dictionary = RaceRiders.record_finish(
-		TRACK_ID, p.finish_time, p.place, race.ghost_rows
+		world_id, p.finish_time, p.place, race.ghost_rows
 	)
 	var mode: String = "none"
 	if not bool(res["first"]):
 		mode = "new_best" if bool(res["new_best"]) else "best"
+	var reveals: Array[String] = []
+	if bool(res["unlocked_hover"]):
+		reveals.append("board")
+	if int(res["unlocked_world"]) > 0:
+		reveals.append("world:%d" % int(res["unlocked_world"]))
+	var next_id: int = RaceRiders.next_new_world()
+	if next_id == world_id:
+		next_id = 0
 	last_result = res.duplicate()
 	last_result["place"] = p.place
 	last_result["time"] = p.finish_time
 	last_result["ghost_line"] = mode
-	card.show_card(p.place, p.finish_time, mode, float(res["prev_best"]), res["unlocked_hover"])
+	last_result["world"] = world_id
+	last_result["next_world"] = next_id
+	card.show_card(p.place, p.finish_time, mode, float(res["prev_best"]), next_id, reveals)
 	sfx.play("clink")
 	_apply_settings()
-	RaceRiders.level_card_shown.emit(TRACK_ID)
+	RaceRiders.level_card_shown.emit(world_id)
 
 
 func _on_card_replay() -> void:
 	sfx.play("click")
 	RaceRiders.maybe_free_card()
-	start_race()
+	start_race(world_id)
+
+
+## The card's biggest disc: the next new world (GDD 10.3).
+func _on_card_next(id: int) -> void:
+	sfx.play("click")
+	RaceRiders.maybe_free_card()
+	start_race(id)
 
 
 func _on_card_home() -> void:
@@ -318,8 +365,9 @@ func _input(event: InputEvent) -> void:
 
 func _zone(pos: Vector2) -> String:
 	var vs: Vector2 = get_viewport().get_visible_rect().size
+	# The home and gear hit squares grow with the safe-area shift (QA 5).
 	var hit: float = RrBalance.HOME_HIT + 16.0
-	if pos.y < hit and (pos.x < hit or pos.x > vs.x - hit):
+	if pos.y < hit + top_shift() and (pos.x < hit or pos.x > vs.x - hit):
 		return "none"
 	if pos.distance_to(hud.boost_center()) <= RrBalance.BOOST_HIT_R:
 		return "boost"
@@ -445,8 +493,8 @@ func _feel(real: float) -> void:
 	# 7 s without a touch: a hand points toward the next pad (rule 18).
 	if racing and steer_dir() == 0 and race.t >= _next_idle_hint:
 		_next_idle_hint = race.t + RrBalance.IDLE_HINT_S
-		if p.next_pad < RrTrack.PADS.size():
-			var px: float = RrTrack.PADS[p.next_pad][1]
+		if p.next_pad < track.pads.size():
+			var px: float = track.pads[p.next_pad][1]
 			hud.idle_hint(-1.0 if px < p.x else 1.0)
 	elif steer_dir() != 0:
 		_next_idle_hint = race.t + RrBalance.IDLE_HINT_S
@@ -501,7 +549,7 @@ func _handle_events() -> void:
 					sfx.play("pad", 1.0 + 0.12 * float(int(pd[1]) - 1))
 					hud.pad_hit(int(pd[1]))
 					if not RaceRiders.less_motion:
-						world.fx_burst("sparkle", world.rider_pos(0, 0.3))
+						world.fx.flakes(world.rider_pos(0, 0.3), 8, Color(1.0, 0.69, 0.0), 3.0, 0.5)
 				elif _near(who):
 					sfx.play("pad", 1.0, -9.0)
 			"boost":
@@ -525,10 +573,9 @@ func _handle_events() -> void:
 			"land":
 				var air: float = data
 				world.views[who].squash(air)
-				if _near(who) and air > 0.5:
-					var lane: bool = track.is_smooth(race.riders[who].s)
-					var col: Color = Color(1, 1, 1) if lane else Color(0.827, 0.604, 0.388)
-					world.fx_burst("dust", world.rider_pos(who, 0.1), col)
+				if _near(who) and air > 0.5 and not RaceRiders.less_motion:
+					var lp: Vector3 = world.rider_pos(who, 0.1)
+					world.fx.dust(lp, 10, 0.8, 0.25, Vector2(0.6, 1.4), Vector2(0.7, 1.8))
 				if me:
 					sfx.play("land_board" if race.player.vehicle == RrRider.BOARD else "land_bike")
 					world.fx_land(air)
@@ -536,32 +583,60 @@ func _handle_events() -> void:
 						sfx.play("big_land")
 						hud.big_landing()
 			"bump":
-				var other: int = data
-				if me or other == 0:
-					sfx.play("bonk")
-				elif _near(who):
+				if _near(who):
 					sfx.play("bonk", 1.0, -8.0)
-				if _near(who) and not RaceRiders.less_motion:
-					var mid: Vector3 = (
-						(world.rider_pos(who, 0.8) + world.rider_pos(other, 0.8)) * 0.5
+			"nudge":
+				# A rival hit the player: a soft side thud, a little dust.
+				sfx.play("bonk", 1.0, -3.0)
+				if not RaceRiders.less_motion:
+					world.fx.dust(
+						world.rider_pos(0, 0.2), 4, 0.5, 0.2, Vector2(0.3, 0.8), Vector2(0.5, 1.2)
 					)
-					world.fx_burst("puff", mid, Color(1, 1, 1))
+			"knock":
+				_on_knock(who, data)
 			"rail":
 				if me and _scrape_t <= 0.0:
 					_scrape_t = 0.4
 					sfx.play("scrape")
 					if not RaceRiders.less_motion:
-						world.fx_burst("dust", world.rider_pos(0, 0.1), Color(0.827, 0.604, 0.388))
+						world.fx.dust(
+							world.rider_pos(0, 0.1),
+							3,
+							0.4,
+							0.2,
+							Vector2(0.2, 0.6),
+							Vector2(0.6, 1.4)
+						)
 			"hay":
-				var b: Array = RrTrack.HAY[int(data)]
+				var b: Array = track.blocks[int(data)]
 				if _near(who):
 					sfx.play("hay", 1.0, 0.0 if me else -6.0)
-					world.fx_burst("straw", track.world_point(float(b[0]), float(b[1]), 0.6))
+					var hp: Vector3 = track.world_point(float(b[0]), float(b[1]), 0.6)
+					world.fx.flakes(hp, 20, Color(0.847, 0.753, 0.537), 4.0)
+			"patch":
+				if _near(who) and not RaceRiders.less_motion:
+					var mud: bool = world_id == 1
+					var pp: Vector3 = world.rider_pos(who, 0.15)
+					if mud:
+						world.fx.flakes(pp, 12, Color(0.22, 0.16, 0.10), 3.0, 0.5)
+					else:
+						world.fx.dust(pp, 6, 0.6, 0.22, Vector2(0.4, 1.0), Vector2(0.6, 1.6))
+				if me:
+					sfx.play("scrape", 0.8, -6.0)
+			"roller_hit":
+				var rr: Array = race.roller_pose(int(data))
+				var rp: Vector3 = world.rider_pos(who, 0.7)
+				if not rr.is_empty():
+					rp = track.world_point(float(rr[0]), float(rr[1]), 0.7)
+				if _near(who):
+					sfx.play("hay", 1.2, 0.0 if me else -6.0)
+					world.fx.flakes(rp, 16, Color(0.62, 0.48, 0.30), 4.0)
 			"swap":
 				var sw: Array = data
 				world.fx_gate(int(sw[0]))
-				if _near(who):
-					world.fx_burst("puff", world.rider_pos(who, 0.8), Color(1, 1, 1))
+				if _near(who) and not RaceRiders.less_motion:
+					var wp: Vector3 = world.rider_pos(who, 0.3)
+					world.fx.dust(wp, 16, 0.8, 0.18, Vector2(0.5, 1.5), Vector2(0.6, 1.6))
 				if me:
 					sfx.play("swap")
 					if _first_swap_pending:
@@ -585,7 +660,19 @@ func _on_player_finish() -> void:
 	sfx.play("cheer")
 	if race.player.place <= 3 and not RaceRiders.less_motion:
 		var fs: float = track.length + 2.0
-		world.fx_burst("confetti", track.world_point(fs, 0.0, 5.0))
+		world.fx.confetti(track.world_point(fs, 0.0, 6.0))
+
+
+## GDD 4.7 / 11, DESIGN 2c, 7: the rival tips over away from the player with
+## a realistic dust burst and 6 stones; the tumbling-bike icon shows 500 ms.
+## No stars, no shake for the rival's fall.
+func _on_knock(who: int, data: Variant) -> void:
+	var at: Array = data
+	var p: Vector3 = track.world_point(float(at[0]), float(at[1]), 0.15)
+	world.fx.knock(p)
+	hud.knock_icon(who)
+	sfx.play("bonk")
+	sfx.play("scrape", 0.9, -4.0)
 
 
 func _notification(what: int) -> void:

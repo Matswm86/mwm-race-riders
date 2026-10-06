@@ -1,26 +1,31 @@
 class_name RrDisc
 extends Control
 
-## Round icon button (DESIGN section 4): white disc, ink ring, ink icon drawn
-## from shapes (no text, no fonts). Acts on release inside the control; the
-## touch area is the whole control rect, the disc can sit anywhere in it.
+## Round icon button (DESIGN 3, 5): ink disc, 4 px white ring, white icon
+## drawn from shapes (no text, no fonts), soft shadow. Acts on release inside
+## the control; the touch area is the whole control rect, the disc can sit
+## anywhere in it.
 
 signal tapped
 
-const INK := Color(0.141, 0.129, 0.114)
+const INK := Color(0.078, 0.090, 0.110)
 const WHITE := Color(1.0, 1.0, 1.0)
-const GREEN_SOFT := Color(0.890, 0.941, 0.918)
-const NEXT := Color(1.0, 0.541, 0.239)
+const AMBER := Color(1.000, 0.690, 0.000)
+const SHADOW := Color(0.0, 0.0, 0.0, 0.28)
 
 ## Touches are ignored until this tick (holdover after a screen change).
 static var block_until_ms: int = 0
 
 @export var icon: String = "play"
 @export var disc_radius: float = 100.0
-@export var ring_px: float = 6.0
-@export var fill: Color = WHITE
+@export var ring_px: float = 4.0
+@export var fill: Color = Color(0.078, 0.090, 0.110, 0.92)
 ## Disc centre inside the control; negative = the middle of the rect.
 @export var disc_center: Vector2 = Vector2(-1, -1)
+## > 0: the disc shows that world's picture with a small play badge.
+@export var picture_world: int = 0
+## Idle cue scale (1.0 = still), set by the owner (GDD rule 18 pulse).
+var pulse: float = 1.0
 
 var _down: bool = false
 var _press_t: float = 99.0
@@ -78,17 +83,28 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	var pressed: bool = _down or _press_t < 0.1
-	var k: float = 0.92 if pressed else 1.0
+	var k: float = (0.92 if pressed else 1.0) * pulse
 	var c: Vector2 = center()
 	var r: float = disc_radius * k
-	var f: Color = GREEN_SOFT if pressed and fill == WHITE else fill
-	draw_circle(c, r, f)
-	draw_arc(c, r - ring_px * 0.5, 0.0, TAU, 64, INK, ring_px, true)
-	RrDisc.draw_icon(self, icon, c, r * 0.55, INK)
+	draw_circle(c + Vector2(0, 5), r + 2.0, SHADOW)
+	if picture_world > 0:
+		RrDraw.world_picture(self, c, r, picture_world)
+		draw_arc(c, r - ring_px * 0.5, 0.0, TAU, 64, WHITE, ring_px, true)
+		var bc: Vector2 = c + Vector2(r * 0.62, r * 0.62)
+		draw_circle(bc, r * 0.3, fill)
+		draw_arc(bc, r * 0.3 - 2.0, 0.0, TAU, 40, WHITE, 4.0, true)
+		RrDisc.draw_icon(self, "play", bc + Vector2(r * 0.03, 0), r * 0.16, WHITE, INK)
+		return
+	draw_circle(c, r, fill)
+	draw_arc(c, r - ring_px * 0.5, 0.0, TAU, 64, WHITE, ring_px, true)
+	RrDisc.draw_icon(self, icon, c, r * 0.55, WHITE, INK)
 
 
-## Shared icon painter (also used by the HUD, card and track page).
-static func draw_icon(ci: CanvasItem, name: String, c: Vector2, s: float, col: Color) -> void:
+## Shared icon painter (card, world page, settings). hole = the colour of
+## cut-outs (door, gear hub, eyes), normally the disc fill.
+static func draw_icon(
+	ci: CanvasItem, name: String, c: Vector2, s: float, col: Color, hole: Color = INK
+) -> void:
 	match name:
 		"play", "next":
 			var pts := PackedVector2Array(
@@ -132,7 +148,7 @@ static func draw_icon(ci: CanvasItem, name: String, c: Vector2, s: float, col: C
 			)
 			ci.draw_colored_polygon(roof, col)
 			ci.draw_rect(Rect2(c + Vector2(-0.55, -0.1) * s, Vector2(1.1, 0.8) * s), col)
-			ci.draw_rect(Rect2(c + Vector2(-0.17, 0.25) * s, Vector2(0.34, 0.45) * s), WHITE)
+			ci.draw_rect(Rect2(c + Vector2(-0.17, 0.25) * s, Vector2(0.34, 0.45) * s), hole)
 		"gear":
 			var pts := PackedVector2Array()
 			for i: int in 32:
@@ -140,7 +156,7 @@ static func draw_icon(ci: CanvasItem, name: String, c: Vector2, s: float, col: C
 				var rr: float = 0.78 if (i / 2) % 2 == 0 else 0.58
 				pts.append(c + Vector2(cos(ang), sin(ang)) * rr * s)
 			ci.draw_colored_polygon(pts, col)
-			ci.draw_circle(c, s * 0.24, WHITE)
+			ci.draw_circle(c, s * 0.24, hole)
 		"left", "right":
 			var d: float = -1.0 if name == "left" else 1.0
 			var pts := PackedVector2Array(
@@ -177,7 +193,7 @@ static func draw_icon(ci: CanvasItem, name: String, c: Vector2, s: float, col: C
 				body.append(c + Vector2(fx, fy) * s)
 			ci.draw_colored_polygon(body, col)
 			for ex: float in [-0.22, 0.22]:
-				ci.draw_circle(c + Vector2(ex, -0.15) * s, s * 0.12, WHITE)
+				ci.draw_circle(c + Vector2(ex, -0.15) * s, s * 0.12, hole)
 		"music":
 			# Two beamed eighth notes.
 			var w: float = s * 0.14
