@@ -9,6 +9,8 @@ extends Node
 ## Hooks: set_full_unlock(on), set_difficulty(easy), set_shell_inset(inset),
 ## set_sfx_on / set_music_on / set_haptics_on / set_less_motion, save_game().
 ## Signals up: level_card_shown(track_id), free_levels_finished().
+## Progress is per world (GDD 9.1): world N+1 opens on the first finish of
+## world N, any place. The "track id" the shell sees is the world id.
 
 signal level_card_shown(track_id: int)
 signal free_levels_finished
@@ -37,10 +39,10 @@ var quality_auto_dropped: bool = false
 var finishes: int = 0
 var hover_unlocked: bool = false
 var seen_first_swap: bool = false
-## track id (String) -> {best_time, best_place, won, ghost}
-var tracks: Dictionary = {}
+## world id (String) -> {best_time, best_place, won, ghost}
+var worlds: Dictionary = {}
 var cosmetics: Dictionary = {"outfit": 1, "bike": 1, "board": 1, "owned": []}
-var last_track: int = 1
+var last_world: int = 1
 ## True when no save existed at start: the race starts by itself sooner.
 var first_launch: bool = true
 var _free_card_sent: bool = false
@@ -134,28 +136,66 @@ func set_less_motion(on: bool) -> void:
 # ---------------------------------------------------------------- progress
 
 
-func track_data(track_id: int) -> Dictionary:
-	return tracks.get(str(track_id), {})
+func world_data(world_id: int) -> Dictionary:
+	return worlds.get(str(world_id), {})
 
 
-func ghost_rows(track_id: int) -> Array:
-	return track_data(track_id).get("ghost", [])
+## Ghost of this world only (GDD 10.8); empty until the world is finished.
+func ghost_rows(world_id: int) -> Array:
+	return world_data(world_id).get("ghost", [])
 
 
-func best_time(track_id: int) -> float:
-	return float(track_data(track_id).get("best_time", 0.0))
+func best_time(world_id: int) -> float:
+	return float(world_data(world_id).get("best_time", 0.0))
 
 
-## Track ids the track page shows (slice: track 1 only).
-func visible_tracks() -> Array[int]:
-	return [1]
+func finished_world(world_id: int) -> bool:
+	return best_time(world_id) > 0.0
+
+
+## Worlds the player may race (GDD 9.1-9.2): world 1, plus each world whose
+## previous world has been finished. Only built worlds; the free part in MWM
+## Play (full_unlock false) is world 1 only.
+func open_worlds() -> Array[int]:
+	var out: Array[int] = [1]
+	var cap: int = RrBalance.WORLDS_BUILT if full_unlock else RrBalance.FREE_WORLDS
+	for w: int in range(2, cap + 1):
+		if finished_world(w - 1):
+			out.append(w)
+		else:
+			break
+	return out
+
+
+## Worlds the world page shows (open ones only; unopened are not drawn).
+func visible_worlds() -> Array[int]:
+	return open_worlds()
+
+
+## The open world not raced to the finish yet, or 0 (GDD 10.3 next disc).
+func next_new_world() -> int:
+	for w: int in open_worlds():
+		if not finished_world(w):
+			return w
+	return 0
+
+
+## GDD 10.2: launch into the newest open world not yet finished, else the
+## last world played.
+func launch_world() -> int:
+	var n: int = next_new_world()
+	if n > 0:
+		return n
+	var open: Array[int] = open_worlds()
+	return last_world if last_world in open else open[open.size() - 1]
 
 
 ## Record a finish (GDD 9-10). Returns what the card needs:
-## {first: bool, new_best: bool, prev_best: float, unlocked_hover: bool}.
-func record_finish(track_id: int, time_s: float, place: int, ghost: Array) -> Dictionary:
-	var key: String = str(track_id)
-	var d: Dictionary = tracks.get(key, {})
+## {first, new_best, prev_best, unlocked_hover, unlocked_world (id or 0)}.
+func record_finish(world_id: int, time_s: float, place: int, ghost: Array) -> Dictionary:
+	var key: String = str(world_id)
+	var open_before: Array[int] = open_worlds()
+	var d: Dictionary = worlds.get(key, {})
 	var prev: float = float(d.get("best_time", 0.0))
 	var first: bool = prev <= 0.0
 	var new_best: bool = first or time_s < prev
@@ -164,20 +204,30 @@ func record_finish(track_id: int, time_s: float, place: int, ghost: Array) -> Di
 		d["ghost"] = ghost
 	d["best_place"] = mini(int(d.get("best_place", 9)), place)
 	d["won"] = bool(d.get("won", false)) or place == 1
-	tracks[key] = d
+	worlds[key] = d
 	finishes += 1
 	first_launch = false
-	last_track = track_id
+	last_world = world_id
 	var unlocked: bool = false
 	if not hover_unlocked and finishes >= RrBalance.UNLOCK_HOVER:
 		hover_unlocked = true
 		unlocked = true
+	var new_world: int = 0
+	for w: int in open_worlds():
+		if not w in open_before:
+			new_world = w
 	save_game()
-	return {"first": first, "new_best": new_best, "prev_best": prev, "unlocked_hover": unlocked}
+	return {
+		"first": first,
+		"new_best": new_best,
+		"prev_best": prev,
+		"unlocked_hover": unlocked,
+		"unlocked_world": new_world,
+	}
 
 
-## GDD 9.2: from total finish 3 on, at most once per app session, only when
-## the host has locked the full game.
+## GDD 9.2: from total finish FREE_CARD_FROM_FINISH on, at most once per app
+## session, only when the host has locked the full game.
 func maybe_free_card() -> bool:
 	if full_unlock or _free_card_sent or finishes < RrBalance.FREE_CARD_FROM_FINISH:
 		return false
@@ -197,9 +247,9 @@ func save_game() -> void:
 		"finishes": finishes,
 		"hover_unlocked": hover_unlocked,
 		"seen_first_swap": seen_first_swap,
-		"tracks": tracks,
+		"worlds": worlds,
 		"cosmetics": cosmetics,
-		"last_track": last_track,
+		"last_world": last_world,
 		"difficulty": "lett" if easy else "vanlig",
 		"settings":
 		{
@@ -234,12 +284,13 @@ func load_game() -> void:
 	finishes = maxi(0, int(d.get("finishes", 0)))
 	hover_unlocked = bool(d.get("hover_unlocked", finishes >= RrBalance.UNLOCK_HOVER))
 	seen_first_swap = bool(d.get("seen_first_swap", false))
-	var t: Variant = d.get("tracks", {})
-	tracks = t if t is Dictionary else {}
+	# Saves from the toy slice kept track 1 under "tracks" (= world 1).
+	var w: Variant = d.get("worlds", d.get("tracks", {}))
+	worlds = w if w is Dictionary else {}
 	var c: Variant = d.get("cosmetics", {})
 	if c is Dictionary:
 		cosmetics = c
-	last_track = int(d.get("last_track", 1))
+	last_world = clampi(int(d.get("last_world", d.get("last_track", 1))), 1, RrBalance.WORLD_COUNT)
 	easy = String(d.get("difficulty", "lett")) != "vanlig"
 	var s: Variant = d.get("settings", {})
 	if s is Dictionary:
@@ -260,8 +311,8 @@ func reset_all() -> void:
 	finishes = 0
 	hover_unlocked = false
 	seen_first_swap = false
-	tracks = {}
-	last_track = 1
+	worlds = {}
+	last_world = 1
 	first_launch = true
 	_free_card_sent = false
 

@@ -1,117 +1,82 @@
 class_name RrTrack
 extends RefCounted
 
-## Track 1 "Furuløypa / Pine Run" (GDD 6.1) in track space: s = metres along
-## the centre line, x = metres to the right of it. The centre line is
-## integrated once at 1 m steps from a curvature and grade profile, so any s
+## One world's track (GDD 6.1 / 6.2) in track space: s = metres along the
+## centre line, x = metres to the right of it. The centre line is integrated
+## once at 1 m steps from the world's curvature and grade profile, so any s
 ## maps to a position, a heading and a slope without a physics engine. A
-## Path3D built from the same points is exposed for the scene (GDD 4).
+## Path3D built from the same points is exposed for the scene (GDD 4). The
+## numbers live in RrWorlds; this class only answers questions about them.
 
 const S_MIN: float = -40.0
 const S_MAX: float = 1040.0
 const STEP: float = 1.0
-
-## Section table, GDD 6.1: [from, to, surface, cruise mult]
-## surface: "dirt" = bike ground, "lane" = smooth skyway (hoverboard x1.06).
-const SECTIONS: Array = [
-	[-40.0, 300.0, "dirt", 1.00],
-	[300.0, 600.0, "lane", 1.00],
-	[600.0, 880.0, "dirt", 1.05],
-	[880.0, 950.0, "dirt", 1.00],
-	[950.0, 1040.0, "dirt", 0.5],
-]
-## Width key points [s, width]; widths ease linearly between them.
-const WIDTHS: Array = [
-	[-40.0, 12.0],
-	[0.0, 12.0],
-	[40.0, 10.0],
-	[536.0, 10.0],
-	[544.0, 8.0],
-	[576.0, 8.0],
-	[584.0, 10.0],
-	[600.0, 10.0],
-	[606.0, 9.0],
-	[714.0, 9.0],
-	[722.0, 7.0],
-	[768.0, 7.0],
-	[776.0, 9.0],
-	[874.0, 9.0],
-	[886.0, 12.0],
-	[1040.0, 12.0],
-]
-## Kid line key points [s, x] (GDD 4.3 / 6.1), eased linearly between them.
-const KID_LINE: Array = [
-	[-40.0, 0.0],
-	[305.0, 0.0],
-	[328.0, 2.5],
-	[375.0, 2.5],
-	[395.0, 0.0],
-	[482.0, 0.0],
-	[500.0, 1.8],
-	[540.0, 1.8],
-	[558.0, 0.0],
-	[664.0, 0.0],
-	[684.0, 3.0],
-	[715.0, 3.0],
-	[732.0, 0.0],
-	[1040.0, 0.0],
-]
-## Speed pads P1-P10 [s, x].
-const PADS: Array = [
-	[120.0, 0.0],
-	[210.0, -3.0],
-	[340.0, 2.5],
-	[352.0, 2.5],
-	[364.0, 2.5],
-	[470.0, -3.0],
-	[700.0, 3.0],
-	[800.0, -3.0],
-	[812.0, -3.0],
-	[824.0, -3.0],
-]
-## Kickers K1-K4: s of the lip (air time in RrBalance.KICKER_AIR_S).
-const KICKERS: Array[float] = [180.0, 430.0, 760.0, 900.0]
-## Hay bales H1-H4 [s, x].
-const HAY: Array = [
-	[260.0, 2.5],
-	[520.0, -0.5],
-	[650.0, -2.0],
-	[840.0, 1.5],
-]
 const HAY_HALF_W: float = 0.8
-## Swap gates [s, vehicle after the gate]: 1 = hoverboard, 0 = bike.
-const GATES: Array = [[300.0, 1], [600.0, 0]]
-const TUNNEL: Vector2 = Vector2(540.0, 580.0)
-const FENCE: Vector2 = Vector2(718.0, 772.0)
-## Curvature profile [from, to, 1/radius]; + = bends right.
-const BENDS: Array = [
-	[50.0, 100.0, -1.0 / 60.0],
-	[110.0, 160.0, 1.0 / 60.0],
-	[205.0, 280.0, 1.0 / 150.0],
-	[330.0, 420.0, -1.0 / 200.0],
-	[460.0, 540.0, 1.0 / 160.0],
-	[620.0, 700.0, -1.0 / 130.0],
-	[790.0, 860.0, 1.0 / 220.0],
-]
-## Grade profile [from s, drop per metre]; eased over 20 m between rows.
-const GRADES: Array = [
-	[-40.0, 0.05],
-	[0.0, 0.15],
-	[40.0, 0.08],
-	[300.0, 0.06],
-	[600.0, 0.20],
-	[880.0, 0.04],
-	[950.0, 0.02],
-]
 
+var world_id: int = 1
+## GDD tables for this world (see RrWorlds).
+var sections: Array = []
+var widths: Array = []
+var kid_line: Array = []
+var pads: Array = []
+var kickers: Array[float] = []
+var kicker_air: Array[float] = []
+var kicker_models: Array[String] = []
+## Block hindrances [s, x] (hay bales).
+var blocks: Array = []
+## Patch hindrances [s0, s1, x0, x1, kind] (mud, sand).
+var patches: Array = []
+## Roller hindrances [s, dir] (tumbleweeds).
+var rollers: Array = []
+var gates: Array = []
+var bends: Array = []
+var grades: Array = []
+var drops: Array = []
+## s range with no ground under it (W2 mesa gap), or Vector2(-1, -1).
+var gap: Vector2 = Vector2(-1.0, -1.0)
+var tunnel: Vector2 = Vector2(-1.0, -1.0)
+var fence: Vector2 = Vector2(-1.0, -1.0)
+var river: Vector2 = Vector2(-1.0, -1.0)
+var look: Dictionary = {}
 var length: float = RrBalance.TRACK1_LENGTH_M
 var _pos: PackedVector3Array = PackedVector3Array()
 var _yaw: PackedFloat32Array = PackedFloat32Array()
 var _grade: PackedFloat32Array = PackedFloat32Array()
 
 
-func _init() -> void:
+func _init(id: int = 1) -> void:
+	var d: Dictionary = RrWorlds.get_def(id)
+	world_id = int(d["id"])
+	length = float(d["length"])
+	sections = d["sections"]
+	widths = d["widths"]
+	kid_line = d["kid_line"]
+	pads = d["pads"]
+	for k: Variant in d["kickers"]:
+		kickers.append(float(k))
+	for a: Variant in d["kicker_air"]:
+		kicker_air.append(float(a))
+	for m: Variant in d["kicker_models"]:
+		kicker_models.append(String(m))
+	blocks = d["blocks"]
+	patches = d["patches"]
+	rollers = d["rollers"]
+	gates = d["gates"]
+	bends = d["bends"]
+	grades = d["grades"]
+	drops = d["drops"]
+	gap = _range(d["gap"])
+	tunnel = _range(d["tunnel"])
+	fence = _range(d["fence"])
+	river = _range(d["river"])
+	look = d["look"]
 	_integrate()
+
+
+static func _range(a: Array) -> Vector2:
+	if a.size() < 2:
+		return Vector2(-1.0, -1.0)
+	return Vector2(float(a[0]), float(a[1]))
 
 
 func _integrate() -> void:
@@ -129,7 +94,7 @@ func _integrate() -> void:
 	for i: int in range(i0 + 1, n):
 		var s: float = S_MIN + (i - 0.5) * STEP
 		yaw -= _curv_at(s) * STEP
-		var g: float = _grade_at(s)
+		var g: float = _grade_at(s) + _drop_at(s)
 		p += Vector3(-sin(yaw), -g, -cos(yaw)) * STEP
 		_pos[i] = p
 		_yaw[i] = yaw
@@ -138,7 +103,7 @@ func _integrate() -> void:
 	yaw = 0.0
 	for i: int in range(i0 - 1, -1, -1):
 		var s: float = S_MIN + (i + 0.5) * STEP
-		var g: float = _grade_at(s)
+		var g: float = _grade_at(s) + _drop_at(s)
 		p -= Vector3(-sin(yaw), -g, -cos(yaw)) * STEP
 		yaw += _curv_at(s) * STEP
 		_pos[i] = p
@@ -147,7 +112,7 @@ func _integrate() -> void:
 
 
 func _curv_at(s: float) -> float:
-	for b: Array in BENDS:
+	for b: Array in bends:
 		var a: float = b[0]
 		var e: float = b[1]
 		if s >= a and s < e:
@@ -157,10 +122,21 @@ func _curv_at(s: float) -> float:
 	return 0.0
 
 
+## Extra drop per metre inside a drops row (smoothstep shaped).
+func _drop_at(s: float) -> float:
+	for d: Array in drops:
+		var a: float = d[0]
+		var e: float = d[1]
+		if s >= a and s < e:
+			var u: float = (s - a) / (e - a)
+			return float(d[2]) / (e - a) * 6.0 * u * (1.0 - u)
+	return 0.0
+
+
 func _grade_at(s: float) -> float:
-	var g: float = float(GRADES[0][1])
-	for i: int in range(1, GRADES.size()):
-		var row: Array = GRADES[i]
+	var g: float = float(grades[0][1])
+	for i: int in range(1, grades.size()):
+		var row: Array = grades[i]
 		var start: float = row[0]
 		if s >= start + 20.0:
 			g = row[1]
@@ -183,7 +159,7 @@ static func _keyed(table: Array, s: float) -> float:
 
 
 func width(s: float) -> float:
-	return _keyed(WIDTHS, s)
+	return _keyed(widths, s)
 
 
 func half_limit(s: float) -> float:
@@ -191,18 +167,18 @@ func half_limit(s: float) -> float:
 
 
 func kid_x(s: float) -> float:
-	return _keyed(KID_LINE, s)
+	return _keyed(kid_line, s)
 
 
 func section_mult(s: float) -> float:
-	for row: Array in SECTIONS:
+	for row: Array in sections:
 		if s < float(row[1]):
 			return row[3]
 	return RrBalance.RUNOUT_MULT
 
 
 func surface(s: float) -> String:
-	for row: Array in SECTIONS:
+	for row: Array in sections:
 		if s < float(row[1]):
 			return row[2]
 	return "dirt"
@@ -213,13 +189,30 @@ func is_smooth(s: float) -> bool:
 
 
 func in_tunnel(s: float) -> bool:
-	return s >= TUNNEL.x and s < TUNNEL.y
+	return s >= tunnel.x and s < tunnel.y
+
+
+func in_gap(s: float) -> bool:
+	return s >= gap.x and s < gap.y
+
+
+## Patch slow-down for a rider at (s, x) on a vehicle (GDD 4.8): 1.0 outside
+## every patch; the hoverboard floats over sand.
+func patch_mult(s: float, x: float, board: bool, easy: bool) -> float:
+	for p: Array in patches:
+		if s >= float(p[0]) and s < float(p[1]) and x >= float(p[2]) and x <= float(p[3]):
+			if String(p[4]) == "sand":
+				if board:
+					return 1.0
+				return RrBalance.SAND_MULT_L if easy else RrBalance.SAND_MULT_V
+			return RrBalance.MUD_MULT
+	return 1.0
 
 
 ## Height of the kicker deck under s (deck from lip - KICKER_LEN_M to lip),
 ## 0 off the ramps.
 func ramp_height(s: float) -> float:
-	for k: float in KICKERS:
+	for k: float in kickers:
 		var a: float = k - RrBalance.KICKER_LEN_M
 		if s >= a and s < k:
 			var u: float = (s - a) / RrBalance.KICKER_LEN_M
