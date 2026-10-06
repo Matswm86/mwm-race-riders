@@ -204,9 +204,9 @@ def run(mode, strat, hover, rng, track=1):
                     r.fx.append((smult, t + sdur))
             # bumps (only when another rider within 2 m)
             near = any(o is not r and o.done is None and abs(o.s - r.s) < 2.0 for o in riders)
-            if near and rng.random() < BUMP_RATE * DT * 4:
-                if not r.p:
-                    r.fx.append((BUMP_MULT_AI, t + BUMP_T))  # player: sideways nudge only
+            # player: sideways nudge only, so only AI riders lose speed on a bump
+            if near and rng.random() < BUMP_RATE * DT * 4 and not r.p:
+                r.fx.append((BUMP_MULT_AI, t + BUMP_T))
             # boost
             if t >= r.boost_ready_at:
                 if r.boost_pending is None:

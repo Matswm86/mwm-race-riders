@@ -788,3 +788,160 @@ Acceptance hints for game-qa: kids walk-through with sound off, touching nothing
 11. **Free part in MWM Play is world 1 only**, so the shell's "all levels played" card can show after the very first race. **Default: world 1 only, card at most once per session.** Alternative: worlds 1 and 2 free, so a trial child also sees a world change.
 12. **World names and settings** (table 6.0, realistic: pine forest, red canyon, glacier, volcanic ash, rainforest, night harbour). **Default: as listed.** The volcano keeps lava behind rails and never on the track; swap it for a quarry if the owner finds lava too scary for 4-year-olds.
 13. **Mud added to world 1** (2 puddles) so each world has 2+ hindrances. **Default: add them**; the current build has hay only.
+
+## 17. Progression v2: many tracks, an offline league ladder, track boards (owner 21:00)
+
+Post-slice. Until the track kits of 17.1 exist, the build keeps the slice rule (world 2 opens on the first finish of world 1). Everything here is **offline**: no internet, no accounts, no data leaves the phone (MWM Play rule). "Leaderboards" are local tables of named computer rivals plus your own times. Speed numbers stay as in sections 4 and 13.
+
+### 17.1 Tracks: 6 worlds x 8 tracks, plus Pro variants = 96 races
+
+| | Count | How it is made |
+|---|---|---|
+| Worlds | 6 | Table 6.0 (unchanged) |
+| Tracks per world | 8 | Track 1 = the hand-made table (6.1, 6.2; worlds 3-6 to come). Tracks 2-8 are assembled from that world's **track kit** |
+| Base tracks | **48** | Lengths per world: `WORLD_LENGTH_M[w] + 25 m x (k - 1)`, so a world's tracks run from about 44 s (track 1) to about 50 s (track 8) (my calc: 175 m more at 30 m/s is 5.8 s) |
+| Pro variants | **48** | Same track **mirrored** (x -> -x, kid line too), **evening light** preset (low warm sun, longer shadows, one HDRI swap per world), **+2 hindrances** where the spacing rules allow, rivals +0.01 skill. No new art |
+| Total races | **96** | |
+
+**Track kit (per world, built once by the art and level side, reused by all 8 tracks):** 14 pieces, each 90-240 m long, with fixed content and its own kid-line segment, joining at a standard 10 m wide joint:
+
+| Piece | Variants | Content |
+|---|---|---|
+| Start | 1 | Grid, start drop |
+| Finish | 1 | Finish kicker (K4 type), finish gate, run-out |
+| Gate-in / Gate-out | 1 each | Swap gate G1 / G2 with the surface change |
+| Pad straight | 2 | 1 pad left or right |
+| Chain zone | 1 | Chain of 3 pads |
+| Bend | 2 | S-bend, long sweeper |
+| Small kicker | 2 | 1.0 s and 1.2 s kickers with their landing slopes (6.3) |
+| Hindrance zone | 2 | The world's two main hindrances (W1: hay lane, mud lane; W2: drift, tumbleweed pair) |
+| Landmark | 1 | Tunnel, bridge, gas station, ice cave ... the world's set piece |
+| Signature | 1 | The world's signature jump (table 6.0) with its landing slope |
+
+**Recipe:** Start, 3-4 pieces, Gate-in, 2-3 smooth pieces, Gate-out, 2-3 pieces, Signature, 0-1 piece, Finish. Rules a generated track must pass: 10 pads incl. 2 chains, 4 kickers incl. the signature at 75-85% of the length, G1 at 28-35% and G2 at 60-66%, all spacing rules from 6.0 and 6.3, no piece twice in a row and at most twice per track, each piece mirrored or not per use.
+
+**Workflow:** a small offline tool (`tools/track_gen.py`, to build with the kits) lists 20 valid recipes per track from a fixed seed, `seed = hash("rr_w{w}_t{k}")`. game-designer picks one per track, hand-tunes bend radii, mirror flags and the prop-scatter seed, and checks the times with `tools/pack_sim.py`. The result is saved as data, `res://tracks/w{w}_t{k}.json`; the game never generates tracks at runtime, so every child gets the same 96 races.
+
+### 17.2 League ladder (offline, like the reference's league climb)
+
+**Leagues:** Bronze -> Silver -> Gold -> Platinum -> Diamond -> Champion, each with 3 tiers (III -> II -> I) = **18 tiers**. Each league has a home world: Bronze = world 1 ... Champion = world 6.
+
+**A season** = 5 rounds in one tier. Each round, you race 5 rivals from your league's table on a new track:
+
+| Tier | The 5 rounds |
+|---|---|
+| III | Home world tracks 1, 2, 3, 4, 5 |
+| II | Home world tracks 6, 7, 8 + next world tracks 1, 2 (a preview of the next world; Champion previews Pro tracks of worlds 1-2) |
+| I | Home world Pro tracks 1, 3, 5, 7, 8 |
+
+The next level is never the same track (owner 13:05). A child first sees world 2 in Bronze II round 4, about race 9 (my calc).
+
+**The table:** you + **11 named rivals** per league (66 in total, persistent in the save: name, jersey colour, number, helmet icon). Each round has two heats of 6: **your heat** (you + the 5 rivals nearest you in points, so you always fight your neighbours) and a **rival heat** of the other 6, simulated with a seeded RNG (`seed = hash(save_seed, tier, round)`): time = `1 / skill x (1 + N(0, 0.025))`. Both heats score points, so the whole table moves every round.
+
+**Points per place in a heat:** 1st **10**, 2nd **8**, 3rd **6**, 4th **5**, 5th **4**, 6th **3**. Every finish scores (rule 30). Ties: more wins, then the better best finish, then the player (my call).
+
+**Promotion:** finish the season in the **top 3** of the 12-rider table -> next tier (after tier I: next league, a new world and roster).
+- **Lett (4-7): no demotion ever.** Safety net: after **2 seasons** in the same tier without promotion, the next season end promotes anyway. Nobody gets stuck.
+- **Vanlig (8+):** soft demotion is a setting ("Nedrykk", default **off**). When on, the bottom 2 drop one tier, never out of the league they have reached.
+
+**Rival skill:** tier III of Bronze uses the table skills `RIVAL_SKILL_BASE` (Lett 0.90-1.00, Vanlig 0.89-0.99, one rival per 0.01). Each league adds `LEAGUE_SKILL_STEP` (Lett **0.006**, Vanlig **0.01**), each tier a third of that. Champion III: Lett +0.030, Vanlig +0.050. Pro tracks +0.01 on top. Rubber banding (7.3) applies unchanged in every heat.
+
+**Between sessions (rule 27 kept):** the owner asked that rivals "race between your sessions". Points that change while you are away would punish a child for stopping, which rule 27 bans. **Default:** after 8 h or more away, each rival in your table gets a seeded **form** of -0.01, 0 or +0.01 skill for the next round, shown as a small up or down arrow by its name. Points only change in rounds you race. Open question 17-1.
+
+**League screen:** shown after the reward card when you tap "next": the 12-row table (jersey, icon, name, points; your row highlighted, rows slide 1.5 s to their new places), 5 round dots, one big race disc. Names are text for older riders and parents; jerseys and icons carry it for non-readers. Launch still goes straight into the next league race (10.2: 10 s or less to racing).
+
+**Season end card:** the table's top 3 on a podium. Promoted: your rider steps up, new tier badge, reward reveal (17.4). Not promoted: a "ride again" disc, with no sad sound and no red. Lett safety-net promotion looks exactly like a normal promotion.
+
+**Free ride:** any open track or Pro variant can be raced alone from the world page (no points), with its ghost.
+
+### 17.3 Track boards (local leaderboard per track)
+
+Each track card opens a 12-row board: **your best time** (with the ghost of that run) + the **11 rivals of that world's league**. A rival's board time starts seeded: `par / skill x (1 + N(0, 0.015))`, and improves when that rival beats it in a heat against you. `par` = the skilled time from `tools/pack_sim.py` for that track (world 1 track 1: 41.8 s, world 2 track 1: 42.9 s, my calc). **Time medals** on the track card: gold <= par x 1.01, silver <= x 1.04, bronze <= x 1.08. Example (my calc): an idle Lett child (43.2 s on world 1 track 1) gets silver.
+
+### 17.4 Rewards (all by playing, nothing for sale)
+
+| Event | Reward |
+|---|---|
+| Promotion III -> II | A livery (bike and board paint set) |
+| Promotion II -> I | A part: wheels, frame decal, board deck or helmet |
+| League won (I -> next league) | League trophy (6 cups on the trophy shelf) + that league's jersey |
+| Gold medal on a track | Gold flag on the track card |
+| First win in a world | That world's gold trim (9.1) |
+
+**Parts are cosmetic only** (my call). Small stats would widen the gap the rubber band keeps fair, the same reason as feel 24. If the owner wants stats, cap them at +1% cruise per part and +3% in total, and re-run the sims (open question 17-2).
+
+### 17.5 MWM Play free part
+
+`full_unlock == false`: **world 1 tracks 1-5** = the whole **Bronze III** season, both vehicles, outfit 2. The season-end card shows normally; instead of promoting, the game emits `free_levels_finished` (at most once per app session), and the shell shows its "Du har spilt alle banene her" card. Bronze III can be replayed forever, with its ghosts and track boards. This replaces the "world 1 only, 1 track" rule of 9.2.
+
+### 17.6 Expected league results (my calc, `tools/league_sim.py`, 40 seasons = 200 races per row, world 1 track 1 used as the stand-in track, rubber band on)
+
+| Player | Mode | League (tier III) | Race top 3 | Race wins | Promoted per season |
+|---|---|---|---|---|---|
+| Holds nothing (4-year-old) | Lett | **Bronze** | **100%** | 42% | 100% |
+| Holds nothing | Lett | Gold | 98% | 22% | 92% |
+| Holds nothing | Lett | Champion | 86% | 12% | 32% (safety net promotes after 2 seasons) |
+| Steers at random | Lett | Gold | 91% | 24% | 75% (old step 0.01; at 0.006 it is higher) |
+| Holds nothing | Vanlig | Bronze | 40% | 0% | 0% (as intended: Vanlig needs input) |
+| Average | Vanlig | Bronze | 99% | 41% | 97% |
+| Average | Vanlig | Gold | 84% | 18% | 65% |
+| Average | Vanlig | Diamond | 70% | 4% | 7% |
+| Average | Vanlig | Champion | 65% | 4% | 2% |
+| Skilled | Vanlig | Platinum | 100% | 96% | 100% |
+| Skilled | Vanlig | Champion | 100% | 75% | 100% |
+
+So an average Vanlig rider climbs to Gold or Platinum and stalls there; only skilled riders reach Champion. The Lett safety net carries a child to the end. Rows for Lett Bronze, Vanlig idle Bronze and Vanlig average Bronze were run with the first step values, which do not matter at Bronze III (offset 0). The 1D model lacks lanes, so retune `LEAGUE_SKILL_STEP` on the phone.
+
+### 17.7 Rival roster (66 names, invented; the owner may rename)
+
+| League | Rivals |
+|---|---|
+| Bronze | Ola Berg, Mia Lund, Sami Ray, Ida Fjell, Leo Park, Nora Vik, Emil Dahl, Ava Moss, Theo Kim, Liv Storm, Max Brook |
+| Silver | Selma Hart, Jonas Reed, Zara Quinn, Aksel Holm, Lea Frost, Omar Vale, Tuva Bay, Finn Cole, Ines Ruiz, Kai Moon, Ella Stone |
+| Gold | Sindre Falk, Maja Wren, Luca Rossi, Hedda Lie, Arlo Grant, Sofie Nygård, Ravi Shah, Frida Sol, Noah Pike, Yuki Mori, Thea Lark |
+| Platinum | Henrik Ås, Clara Dune, Mateo Cruz, Ingrid Skog, Oscar Hale, Amira Noor, Elias Vang, Ronja Elv, Felix Byrne, Saga Nord, Iver Rask |
+| Diamond | Viktor Stål, Alma Bright, Diego Sol, Mathea Ruud, Hugo Lane, Leila Haddad, Johan Brekke, Signe Tind, Rafael Costa, Nina Hav, Sverre Ulv |
+| Champion | Astrid Krone, Magnus Fjord, Isla Grey, Tobias Rønning, Elena Petrova, Bjørn Stein, Kaya Lin, Marius Eik, Selin Aydin, Even Brattli, Jade Rivers |
+
+Within a league, skill rises with list position (first name = slowest). Jersey colours: 11 distinct hues per league, each also with a number 2-12 and one of 5 helmet icons (rule 36: never colour alone).
+
+### 17.8 New `RrBalance.gd` rows (append; the speed block in 13 is unchanged)
+
+```gdscript
+# Progression v2 (GDD 17)
+const WORLDS: int = 6
+const TRACKS_PER_WORLD: int = 8
+const TRACK_LENGTH_STEP_M: float = 25.0          # track k = WORLD_LENGTH_M[w] + 25 * (k - 1)
+const PRO_AI_SKILL_ADD: float = 0.01
+const PRO_EXTRA_HINDRANCES: int = 2
+const LEAGUES: Array[StringName] = [&"bronze", &"silver", &"gold", &"platinum", &"diamond", &"champion"]
+const TIERS_PER_LEAGUE: int = 3
+const ROUNDS_PER_SEASON: int = 5
+const TABLE_RIVALS: int = 11
+const LEAGUE_POINTS: Array[int] = [10, 8, 6, 5, 4, 3]
+const PROMOTE_TOP: int = 3
+const LETT_SAFETY_SEASONS: int = 2
+const VANLIG_DEMOTE_BOTTOM: int = 2
+const DEMOTION_DEFAULT_ON: bool = false
+const RIVAL_SKILL_BASE_L: Array[float] = [0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 1.00]
+const RIVAL_SKILL_BASE_V: Array[float] = [0.89, 0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99]
+const LEAGUE_SKILL_STEP_L: float = 0.006         # per league; a third per tier
+const LEAGUE_SKILL_STEP_V: float = 0.01
+const RIVAL_HEAT_NOISE: float = 0.025            # seeded rival-only heat
+const RIVAL_FORM_STEP: float = 0.01              # -1, 0 or +1 step after an absence
+const RIVAL_FORM_AWAY_H: float = 8.0
+const BOARD_TIME_NOISE: float = 0.015
+const MEDAL_PAR_MULT: Array[float] = [1.01, 1.04, 1.08]   # gold, silver, bronze
+const FREE_TRACKS_W1: int = 5                    # = Bronze III
+const FREE_LEAGUE_TIERS: int = 1
+```
+
+Save additions: `league` (index), `tier`, `season_round`, `seasons_in_tier`, `table` (11 rivals: id, points, form), `boards` (per track: rival best times), `medals`, `trophies`, `demotion_on`, `save_seed` (random once at first launch, on the device only).
+
+### 17.9 Open questions (progression)
+
+1. **Rivals racing while you are away.** Default: only a form arrow changes, and points never move while away (rule 27). Alternative (owner's wording): one rival-only round per real day that scores points. That would pressure children to come back, so I advise against it.
+2. **Parts: cosmetic or small stats.** Default: cosmetic only. Alternative: capped stats (+1% per part, +3% total) with re-tuned rival skill.
+3. **Track count.** Default: 8 per world (48 + 48 Pro). The kit makes 10 per world cheap if the owner wants more; seasons would then use tracks 1-5 / 6-10.
+4. **World order vs league.** Default: a new world arrives with its league (preview in tier II). This replaces the 13:05 "next world on finishing the previous one" after the slice; the slice keeps the 13:05 rule.
+5. **Names.** Default: the invented roster in 17.7, shown as text with jersey and icon. Alternative: jerseys and icons only in Lett.
