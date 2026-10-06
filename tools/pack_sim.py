@@ -11,8 +11,9 @@ import statistics
 import sys
 
 DT = 1 / 60
-ACC_UP, ACC_DOWN = 7.0, 12.0
-V_CRUISE = 20.0
+ACC_UP, ACC_DOWN = 10.5, 18.0
+V_CRUISE = 30.0  # owner 18:27: faster (was 20)
+MULT_CAP = 1.6  # all speed effects together never exceed 1.6 x cruise (48 m/s)
 HOVER_MULT = 1.06
 PAD_MULT = [1.25, 1.32, 1.40]
 PAD_T = 1.2
@@ -23,43 +24,43 @@ BOOST_FIRST, BOOST_REFILL, BOOST_T, BOOST_MULT = 10.0, 10.0, 2.5, 1.40
 # Slow events: (s, mult, seconds, centre_hit, hover_immune). centre_hit = a straight idle Vanlig
 # rider (x 0) rides into it. Lett idle never hits (kid line avoids all of them). Moving rollers
 # (tumbleweeds) only nudge sideways and cost no speed, so they are not listed.
-TRACKS = {
+TRACKS = {  # owner 18:27: distances x1.5 for 30 m/s, re-spaced around the new landing zones
     1: dict(
         name="W1 Furuløypa",
-        L=950.0,
-        sections=[(0, 1.00), (300, 1.00), (600, 1.05), (880, 1.00)],
-        smooth=(300, 600),
-        pads=[120, 210, 340, 352, 364, 470, 700, 800, 812, 824],
-        kid={120, 340, 352, 364, 700},
-        centre={120},
-        kickers=[(180, 1.0), (430, 1.2), (760, 1.6), (900, 1.0)],
+        L=1425.0,
+        sections=[(0, 1.00), (450, 1.00), (900, 1.05), (1320, 1.00)],
+        smooth=(450, 900),
+        pads=[180, 345, 510, 528, 546, 735, 1050, 1230, 1248, 1266],
+        kid={180, 510, 528, 546, 1050},
+        centre={180},
+        kickers=[(270, 1.0), (645, 1.2), (1140, 1.6), (1350, 1.0)],
         slows=[
-            (150, 0.90, 0.5, False, False),  # M1 mud
-            (260, 0.85, 0.5, False, False),  # H1 hay
-            (520, 0.85, 0.5, True, False),  # H2 hay (centre on purpose)
-            (650, 0.85, 0.5, False, False),  # H3 hay
-            (690, 0.90, 0.5, False, False),  # M2 mud
-            (840, 0.85, 0.5, False, False),
+            (225, 0.90, 0.5, False, False),  # M1 mud
+            (390, 0.85, 0.5, False, False),  # H1 hay
+            (780, 0.85, 0.5, True, False),  # H2 hay (centre on purpose)
+            (975, 0.85, 0.5, False, False),  # H3 hay
+            (1028, 0.90, 0.5, False, False),  # M2 mud
+            (1300, 0.85, 0.5, False, False),  # H4 hay
         ],
-    ),  # H4 hay
+    ),
     2: dict(
         name="W2 Ørkenjuvet",
-        L=980.0,
-        sections=[(0, 1.00), (300, 1.00), (620, 1.05), (900, 1.00)],
-        smooth=(300, 620),
-        pads=[110, 285, 350, 362, 374, 540, 670, 830, 842, 854],
-        kid={110, 350, 362, 374, 670},
-        centre={110},
-        kickers=[(200, 1.0), (480, 1.2), (780, 1.8), (930, 0.8)],
+        L=1470.0,
+        sections=[(0, 1.00), (450, 1.00), (930, 1.05), (1350, 1.00)],
+        smooth=(450, 930),
+        pads=[165, 428, 525, 543, 561, 810, 1005, 1275, 1293, 1311],
+        kid={165, 525, 543, 561, 1005},
+        centre={165},
+        kickers=[(300, 1.0), (720, 1.2), (1170, 1.8), (1395, 0.8)],
         slows=[
-            (150, 0.88, 0.75, True, False),  # D1 sand drift, 15 m
-            (580, 0.88, 0.75, True, True),  # D2 sand drift on the rim road (board floats)
-            (870, 0.88, 0.75, True, False),
+            (225, 0.88, 0.75, True, False),  # D1 sand drift, 23 m
+            (870, 0.88, 0.75, True, True),  # D2 sand drift on the rim road (board floats)
+            (1330, 0.88, 0.75, True, False),  # D3 sand drift, 22 m
         ],
-    ),  # D3 sand drift, 15 m
+    ),
 }
 SAND_MULT_L = 0.94  # Lett: drifts slow less (applied to mult < 0.89 entries)
-START_GAP = 3.0
+START_GAP = 4.5
 BUMP_RATE = 1 / 15
 BUMP_T = 0.5
 BUMP_MULT_AI = 0.90  # rival-rival wobble; player is never slowed
@@ -73,10 +74,10 @@ KNOCK_P = {
     ("easy", "skilled"): 0.60,
     ("normal", "skilled"): 0.60,
 }
-FALL_DECEL = 40.0  # m/s^2 while sliding to a stop
+FALL_DECEL = 60.0  # m/s^2 while sliding to a stop
 FALL_DOWN_S = 1.2  # lying down, counted from the hit
 GETUP_S = 0.5  # sits up and remounts, speed 0
-REJOIN_ACCEL = 10.0  # m/s^2 back to its target speed
+REJOIN_ACCEL = 15.0  # m/s^2 back to its target speed
 KNOCK_IMMUNE_S = 6.0  # after it is riding again, that rival cannot be knocked off
 RB_OFF_UNTIL_FRAC = 0.9  # rubber band ignores a rejoining rival until v >= 0.9 x target
 
@@ -86,7 +87,7 @@ MODES = {
         ai_pad=[0.20, 0.25, 0.30, 0.35, 0.40],
         rb_ahead=0.08,
         rb_behind=0.04,
-        rb_range=30.0,
+        rb_range=45.0,
         rb_fade_from=1.1,
         auto_boost=2.0,
     ),
@@ -95,7 +96,7 @@ MODES = {
         ai_pad=[0.30, 0.35, 0.40, 0.45, 0.50],
         rb_ahead=0.05,
         rb_behind=0.03,
-        rb_range=30.0,
+        rb_range=45.0,
         rb_fade_from=0.40,
         auto_boost=None,
     ),
@@ -224,6 +225,7 @@ def run(mode, strat, hover, rng, track=1):
             mult = 1.0
             for f in r.fx:
                 mult *= f[0]
+            mult = min(mult, MULT_CAP)
             sec = [mm for (st, mm) in SECTIONS if r.s >= st][-1]
             mult *= sec
             if hover and SMOOTH[0] <= r.s < SMOOTH[1]:
