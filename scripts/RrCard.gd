@@ -1,17 +1,20 @@
 class_name RrCard
 extends Control
 
-## Finish and reward card (GDD 10.3), no words: trophy by place, the time in
-## digits, the ghost line (new best, or the saved best; none on a world's
-## first run), and the discs at y 1420 that act on release: home, and either
-## next world (biggest, with that world's picture) + replay, or replay as the
-## biggest. Unlocks get their reveal cards after the first disc tap
-## (hoverboard, then the new world's picture), then the chosen action runs.
-## The card never advances by itself; after 7 s the biggest disc pulses.
+## Finish and reward card (GDD 10.3, 17.2-17.3), no words: trophy by place,
+## the time in digits with the medal flag it earned on this track (a star if
+## it is a new medal), the ghost line (new best, or the saved best; none on a
+## track's first run), and the discs at y 1420 that act on release: home,
+## and after a league round "next" (biggest, the picture of the next round's
+## world; it opens the league table) + replay (a free ride on the same
+## track), or replay as the biggest after a free ride. Unlocks get their
+## reveal cards after the first disc tap (the hoverboard), then the chosen
+## action runs. The card never advances by itself; after 7 s the biggest
+## disc pulses.
 
 signal replay_pressed
 signal home_pressed
-signal next_pressed(world_id: int)
+signal next_pressed
 
 const PANEL := Rect2(90, 330, 900, 900)
 const IDLE_PULSE_S: float = 7.0
@@ -20,11 +23,15 @@ var place: int = 1
 var time_s: float = 0.0
 var ghost_mode: String = "none"
 var best_s: float = 0.0
-var next_world: int = 0
+## Next league round's track for the "next" disc ("" = none: free ride).
+var next_key: String = ""
 var less_motion: bool = false
+## Medal on this track (1 gold, 2 silver, 3 bronze, 0 none) and if it is new.
+var medal: int = 0
+var new_medal: bool = false
 var home_disc: RrDisc
 var replay_disc: RrDisc
-var next_disc: RrDisc
+var next_disc: RrRaceDisc
 
 var _t: float = 0.0
 ## Reveal queue: "board" and/or "world:<id>".
@@ -39,7 +46,9 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	home_disc = _disc("home", Vector2(270, 1420), 100.0)
 	replay_disc = _disc("replay", Vector2(810, 1420), 120.0)
-	next_disc = _disc("play", Vector2(810, 1420), 120.0)
+	next_disc = RrRaceDisc.new()
+	add_child(next_disc)
+	_place_disc(next_disc, Vector2(810, 1420), 120.0)
 	home_disc.tapped.connect(func() -> void: _choose("home"))
 	replay_disc.tapped.connect(func() -> void: _choose("replay"))
 	next_disc.tapped.connect(func() -> void: _choose("next"))
@@ -63,24 +72,34 @@ func _place_disc(d: RrDisc, c: Vector2, r: float) -> void:
 	d.queue_redraw()
 
 
-## reveals: unlocks to show after the first tap ("board", "world:2").
+## next: the next league round's track for the "next" disc, "" = none.
+## reveals: unlocks to show after the first tap ("board").
 func show_card(
-	p: int, t: float, ghost: String, best: float, next_id: int, reveals: Array[String]
+	p: int,
+	t: float,
+	ghost: String,
+	best: float,
+	next: String,
+	reveals: Array[String],
+	medal_v: int = 0,
+	medal_new: bool = false
 ) -> void:
+	medal = medal_v
+	new_medal = medal_new
 	place = p
 	time_s = t
 	ghost_mode = ghost
 	best_s = best
-	next_world = next_id
+	next_key = next
 	_reveals = reveals.duplicate()
 	_revealing = false
 	_pending = ""
 	_t = 0.0 if not less_motion else 1.0
 	visible = true
 	home_disc.visible = true
-	if next_world > 0:
+	if next_key != "":
 		next_disc.visible = true
-		next_disc.picture_world = next_world
+		next_disc.track_key = next_key
 		_place_disc(next_disc, Vector2(810, 1420), 120.0)
 		replay_disc.visible = true
 		_place_disc(replay_disc, Vector2(540, 1420), 100.0)
@@ -128,7 +147,7 @@ func _finish(what: String) -> void:
 		"home":
 			home_pressed.emit()
 		"next":
-			next_pressed.emit(next_world)
+			next_pressed.emit()
 		_:
 			replay_pressed.emit()
 
@@ -166,7 +185,7 @@ func _process(delta: float) -> void:
 	_reveal_t += delta
 	modulate.a = clampf(_t / RrBalance.CARD_FADE_S, 0.0, 1.0)
 	# Idle cue (rule 18, QA finding 7): the biggest disc pulses at 1 Hz.
-	var big: RrDisc = next_disc if next_world > 0 else replay_disc
+	var big: RrDisc = next_disc if next_key != "" else replay_disc
 	var k: float = 1.0
 	if _t >= IDLE_PULSE_S and not less_motion and not _revealing:
 		k = 1.0 + 0.05 * (0.5 - 0.5 * cos((_t - IDLE_PULSE_S) * TAU))
@@ -190,6 +209,10 @@ func _draw() -> void:
 	RrDraw.trophy(self, Vector2(540, 590 + drop), place, 1.25)
 	var txt: String = "%d:%04.1f" % [int(time_s / 60.0), fmod(time_s, 60.0)]
 	RrDraw.text_centered(self, txt, Vector2(540, 880), 96, RrDraw.WHITE, "SemiBold")
+	if medal > 0:
+		RrDraw.medal_flag(self, Vector2(770, 880), 44.0, medal)
+		if new_medal:
+			RrDraw.star(self, Vector2(830, 820), 26.0, RrDraw.AMBER)
 	match ghost_mode:
 		"new_best":
 			_ghost_icon(Vector2(420, 1070))

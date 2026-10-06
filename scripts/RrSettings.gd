@@ -4,7 +4,9 @@ extends Control
 ## Settings panel (GDD 10.7), adult-facing, opened from the gear in every
 ## race and on the card. The race is paused while it is open. Rows: Lett /
 ## Vanlig, effects on/off + volume, music (note icon) on/off + volume, ghost,
-## "Mindre bevegelse", Grafikk Høy / Lav (owner). The big play disc at the
+## "Mindre bevegelse", Grafikk Høy / Lav (owner). "Nedrykk" (GDD 17.2,
+## Vanlig soft demotion, default off) sits on the Lett / Vanlig row; white =
+## on. It only acts in Vanlig: Lett never demotes. The big play disc at the
 ## bottom closes it and resumes on release. Inside MWM Play only the two
 ## volume sliders, the ghost and graphics rows are shown (the shell owns the
 ## rest), and the rows close up with no gaps (QA finding 10).
@@ -25,6 +27,7 @@ const TOP_Y: float = 340.0
 var play_disc: RrDisc
 var _lett: Button
 var _vanlig: Button
+var _demote: Button
 var _sound: Button
 var _music: Button
 var _ghost: Button
@@ -49,12 +52,18 @@ func _ready() -> void:
 	theme = th
 	_heading("Innstillinger", Vector2(150, 262))
 	var diff_label: Label = _label("Vanskelighet (neste løp)")
-	_lett = _button("Lett", 360.0)
-	_vanlig = _button("Vanlig", 360.0)
+	_lett = _button("Lett", 240.0)
+	_vanlig = _button("Vanlig", 240.0)
+	_demote = _button("Nedrykk", 260.0)
 	_lett.pressed.connect(func() -> void: _set_easy(true))
 	_vanlig.pressed.connect(func() -> void: _set_easy(false))
+	_demote.pressed.connect(
+		func() -> void:
+			RaceRiders.set_demotion(not RaceRiders.league.demotion_on)
+			refresh()
+	)
 	_rows.append([[diff_label], 54.0, false, false])
-	_rows.append([[_lett, _vanlig], 124.0, false, false])
+	_rows.append([[_lett, _vanlig, _demote], 124.0, false, false])
 	_sound = _button("", 360.0)
 	_sound.pressed.connect(
 		func() -> void:
@@ -141,7 +150,11 @@ func _layout() -> void:
 		if shell and ctl[0] == _sfx_slider:
 			icon_row = true
 			_sfx_icon_y = y + h * 0.5 - 10.0
-		if ctl.size() == 2 and ctl[0] is Button:
+		if ctl.size() == 3:
+			(ctl[0] as Control).position = Vector2(150, y)
+			(ctl[1] as Control).position = Vector2(410, y)
+			(ctl[2] as Control).position = Vector2(670, y)
+		elif ctl.size() == 2 and ctl[0] is Button:
 			(ctl[0] as Control).position = Vector2(150, y)
 			(ctl[1] as Control).position = Vector2(570, y)
 		elif ctl.size() == 2:
@@ -167,6 +180,7 @@ func refresh() -> void:
 	_layout()
 	_style(_lett, RaceRiders.easy)
 	_style(_vanlig, not RaceRiders.easy)
+	_style(_demote, RaceRiders.league.demotion_on)
 	_sound.text = "På" if RaceRiders.sfx_on else "Av"
 	_style(_sound, RaceRiders.sfx_on)
 	_music.text = "På" if RaceRiders.music_on else "Av"

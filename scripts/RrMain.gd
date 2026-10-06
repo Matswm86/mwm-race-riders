@@ -1,10 +1,13 @@
 class_name RrMain
 extends Node
 
-## Root of MWM Race Riders: the 3D world, the HUD, the card, the world page,
-## settings and the race controller. Every launch goes straight into a race:
-## world 1 the first time, then the newest open world not yet finished
-## (GDD 10.2). Every world is its own place; finishing world N opens N+1.
+## Root of MWM Race Riders: the 3D world, the HUD, the card, the league
+## screen (home), the season card, the free-ride track page and boards,
+## settings and the race controller. Every launch goes straight into the next
+## league race (GDD 10.2, 17.2): Bronze III round 1 = world 1 track 1 the
+## first time. After a league round the card's "next" disc opens the league
+## table; after round 5 the season card promotes (or not). Free rides (any
+## open track, no points) start from the track page or the card's replay.
 ## Touches are read here (GDD 3): hold the left or right half to steer
 ## (latest touch wins), the centre boost disc acts on release, the home and
 ## gear squares and the wrist strip never steer.
@@ -21,6 +24,12 @@ var paused: bool = false
 var auto_quality: bool = true
 
 var world_id: int = 0
+## Track key of the loaded world and of the current race.
+var track_key: String = ""
+## "league" (a round that scores) or "free" (no points).
+var race_mode: String = "league"
+## League table ids of the five rivals in this race (AI slots 0-4).
+var heat: Array[int] = []
 var track: RrTrack
 var race: RrRace
 var world: RrWorld
@@ -32,6 +41,9 @@ var center_frame: Control
 var hud: RrHud
 var card: RrCard
 var page: RrTrackPage
+var league_screen: RrLeagueScreen
+var season_card: RrSeasonCard
+var board_view: RrBoardView
 var settings: RrSettings
 var home: RrHomeDisc
 var gear: RrHomeDisc
@@ -40,6 +52,11 @@ var flash := RrFlashLimiter.new()
 var ghost: RrGhost
 ## Card data of the last finish, for tests.
 var last_result: Dictionary = {}
+## Result of the last league round and of the last season end, for tests.
+var last_round: Dictionary = {}
+var last_season: Dictionary = {}
+## Where the board was opened from ("page" or "league").
+var _board_from: String = "league"
 
 var _touches: Dictionary = {}
 var _steer_order: Array[int] = []
@@ -80,9 +97,24 @@ func _ready() -> void:
 	center_frame.size = Vector2(RrBalance.DESIGN_W, RrBalance.DESIGN_H)
 	center_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	screen_root.add_child(center_frame)
+	league_screen = RrLeagueScreen.new()
+	center_frame.add_child(league_screen)
+	league_screen.race_pressed.connect(_on_league_race)
+	league_screen.map_pressed.connect(open_track_page)
+	league_screen.board_pressed.connect(
+		func() -> void: open_board(RaceRiders.league.next_track(), "league")
+	)
 	page = RrTrackPage.new()
 	center_frame.add_child(page)
-	page.track_chosen.connect(func(id: int) -> void: start_race(id))
+	page.board_requested.connect(func(k: String) -> void: open_board(k, "page"))
+	page.back_pressed.connect(_on_back_to_league)
+	board_view = RrBoardView.new()
+	center_frame.add_child(board_view)
+	board_view.race_pressed.connect(_on_board_race)
+	board_view.back_pressed.connect(_on_board_back)
+	season_card = RrSeasonCard.new()
+	center_frame.add_child(season_card)
+	season_card.continued.connect(_on_season_continue)
 	card = RrCard.new()
 	center_frame.add_child(card)
 	card.replay_pressed.connect(_on_card_replay)
@@ -93,7 +125,7 @@ func _ready() -> void:
 	settings.closed.connect(_close_settings)
 	settings.sfx_preview.connect(func() -> void: sfx.play("pad"))
 	home = _guard_disc("home")
-	home.confirmed.connect(open_track_page)
+	home.confirmed.connect(func() -> void: open_league_screen(false))
 	gear = _guard_disc("gear")
 	gear.confirmed.connect(_open_settings)
 	resume_disc = RrDisc.new()
@@ -106,18 +138,19 @@ func _ready() -> void:
 	RaceRiders.settings_changed.connect(_apply_settings)
 	get_viewport().size_changed.connect(_layout)
 	_layout()
-	start_race(RaceRiders.launch_world())
+	start_race(RaceRiders.launch_track(), "league")
 
 
-## Build the 3D scene of a world (one RrWorld per world; the old one goes).
-func _load_world(id: int) -> void:
-	if id == world_id and world != null:
+## Build the 3D scene of a track (one RrWorld per track; the old one goes).
+func _load_world(key: String) -> void:
+	if key == track_key and world != null:
 		return
 	if world != null:
 		remove_child(world)
 		world.queue_free()
-	world_id = id
-	track = RrTrack.new(id)
+	track_key = key
+	track = RrTrack.new(key)
+	world_id = track.world_id
 	world = RrWorld.new()
 	add_child(world)
 	move_child(world, 0)
@@ -151,7 +184,9 @@ func _apply_settings() -> void:
 	card.less_motion = RaceRiders.less_motion
 	var shell: bool = RaceRiders.in_shell()
 	home.visible = screen == "race" and not shell
-	gear.visible = screen in ["race", "card", "page"]
+	gear.visible = screen in ["race", "card", "page", "league", "board"]
+	league_screen.less_motion = RaceRiders.less_motion
+	season_card.less_motion = RaceRiders.less_motion
 	if world.ghost_view != null and not RaceRiders.ghost_on:
 		ghost = null
 
@@ -204,24 +239,36 @@ func safe_top_inset() -> float:
 # ---------------------------------------------------------------- flow
 
 
-## Start a race on world id (-1 = the world raced last).
-func start_race(id: int = -1) -> void:
-	if id < 0:
-		id = world_id if world_id > 0 else RaceRiders.launch_world()
-	if not id in RaceRiders.open_worlds():
-		id = RaceRiders.launch_world()
-	_load_world(id)
+## Start a race. mode "league": the league's next round (its five heat
+## rivals, GDD 17.2); mode "free": track key alone, no points (GDD 17.2 free
+## ride), only on tracks the free ride offers.
+func start_race(key: String = "", mode: String = "league") -> void:
+	var lg: RrLeague = RaceRiders.league
+	if mode == "free" and not RaceRiders.can_ride(key):
+		mode = "league"
+	if mode == "league" and lg.season_over():
+		_show_season_end()
+		return
+	if mode == "league":
+		key = lg.next_track()
+	race_mode = mode
+	_load_world(key)
 	screen = "race"
 	paused = false
 	race = RrRace.new()
-	race.setup(track, RaceRiders.easy, RaceRiders.hover_unlocked)
+	var skills: Array[float] = []
+	heat.clear()
+	if mode == "league":
+		heat = lg.heat_rivals()
+		skills = lg.heat_skills(heat, RaceRiders.easy, track.pro)
+	race.setup(track, RaceRiders.easy, RaceRiders.hover_unlocked, -1, skills)
 	world.make_racers(race)
 	world.set_gates_live(RaceRiders.hover_unlocked)
 	world.reset_camera(race)
-	# GDD 10.8: the ghost is your best run on THIS world, so a world's first
+	# GDD 10.8: the ghost is your best run on THIS track, so a track's first
 	# run never has one (QA finding 1).
 	ghost = null
-	var rows: Array = RaceRiders.ghost_rows(world_id)
+	var rows: Array = RaceRiders.ghost_rows(track_key)
 	if RaceRiders.ghost_on and rows.size() > 1:
 		ghost = RrGhost.new(rows)
 	hud.race = race
@@ -231,7 +278,7 @@ func start_race(id: int = -1) -> void:
 	hud.show_pre_hint = true
 	hud.show_boost_hint = false
 	card.hide_card()
-	page.visible = false
+	_hide_screens()
 	settings.visible = false
 	resume_disc.visible = false
 	_pre_t = 0.0
@@ -252,20 +299,88 @@ func start_race(id: int = -1) -> void:
 	_apply_settings()
 
 
-func open_track_page() -> void:
-	screen = "page"
+func _hide_screens() -> void:
+	page.visible = false
+	board_view.visible = false
+	league_screen.hide_screen()
+	season_card.hide_card()
+
+
+## Common entry of every menu screen: no HUD, no card, quiet ride sounds.
+func _menu(name: String) -> void:
+	screen = name
 	paused = false
 	hud.visible = false
 	card.hide_card()
+	_hide_screens()
 	settings.visible = false
 	resume_disc.visible = false
-	page.refresh()
-	page.visible = true
 	sfx.set_ride(0.0, 0.0, false)
 	sfx.set_wind(0.0, false)
 	_holdover()
+
+
+## Home (GDD 17.2): the league table and the big race disc. animate = rows
+## slide from their places before the last round.
+func open_league_screen(animate: bool = false) -> void:
+	if RaceRiders.league.season_over():
+		_show_season_end()
+		return
+	_menu("league")
+	league_screen.refresh(animate)
 	RaceRiders.save_game()
 	_apply_settings()
+
+
+func open_track_page() -> void:
+	_menu("page")
+	page.refresh()
+	page.visible = true
+	RaceRiders.save_game()
+	_apply_settings()
+
+
+func open_board(key: String, from: String) -> void:
+	_board_from = from
+	_menu("board")
+	board_view.show_board(key)
+	_apply_settings()
+
+
+func _show_season_end() -> void:
+	_menu("season")
+	last_season = RaceRiders.end_season()
+	season_card.show_result(last_season)
+	sfx.play("cheer" if bool(last_season.get("promoted", false)) else "clink")
+	_apply_settings()
+
+
+func _on_season_continue() -> void:
+	sfx.play("click")
+	open_league_screen(false)
+
+
+func _on_league_race() -> void:
+	sfx.play("click")
+	start_race("", "league")
+
+
+func _on_board_race(key: String) -> void:
+	sfx.play("click")
+	start_race(key, "free")
+
+
+func _on_board_back() -> void:
+	sfx.play("click")
+	if _board_from == "page":
+		open_track_page()
+	else:
+		open_league_screen(false)
+
+
+func _on_back_to_league() -> void:
+	sfx.play("click")
+	open_league_screen(false)
 
 
 func _holdover() -> void:
@@ -278,7 +393,7 @@ func _show_card() -> void:
 	hud.visible = false
 	var p: RrRider = race.player
 	var res: Dictionary = RaceRiders.record_finish(
-		world_id, p.finish_time, p.place, race.ghost_rows
+		track_key, p.finish_time, p.place, race.ghost_rows
 	)
 	var mode: String = "none"
 	if not bool(res["first"]):
@@ -286,40 +401,64 @@ func _show_card() -> void:
 	var reveals: Array[String] = []
 	if bool(res["unlocked_hover"]):
 		reveals.append("board")
-	if int(res["unlocked_world"]) > 0:
-		reveals.append("world:%d" % int(res["unlocked_world"]))
-	var next_id: int = RaceRiders.next_new_world()
-	if next_id == world_id:
-		next_id = 0
+	var next_key: String = ""
+	last_round = {}
+	if race_mode == "league":
+		last_round = RaceRiders.record_league_round(heat, heat_times())
+		# After round 5 the disc shows the league cup: it opens the season card.
+		var lg: RrLeague = RaceRiders.league
+		next_key = RrRaceDisc.SEASON if lg.season_over() else lg.next_track()
 	last_result = res.duplicate()
 	last_result["place"] = p.place
 	last_result["time"] = p.finish_time
 	last_result["ghost_line"] = mode
-	last_result["world"] = world_id
-	last_result["next_world"] = next_id
-	card.show_card(p.place, p.finish_time, mode, float(res["prev_best"]), next_id, reveals)
+	last_result["track"] = track_key
+	last_result["mode"] = race_mode
+	last_result["next_track"] = next_key
+	card.show_card(
+		p.place,
+		p.finish_time,
+		mode,
+		float(res["prev_best"]),
+		next_key,
+		reveals,
+		int(res["medal"]),
+		bool(res["new_medal"])
+	)
 	sfx.play("clink")
 	_apply_settings()
-	RaceRiders.level_card_shown.emit(world_id)
+	RaceRiders.level_card_shown.emit(RrTracks.numeric_id(track_key))
 
 
+## Finish time per rider index (0 = player); riders still on course are
+## placed by projected time (GDD 10.3), so the heat always has six results.
+func heat_times() -> Array[float]:
+	var out: Array[float] = []
+	for r: RrRider in race.riders:
+		if r.finished:
+			out.append(r.finish_time)
+		else:
+			var v: float = maxf(r.v, RrBalance.MIN_SPEED_FRAC * RrBalance.CRUISE_MPS)
+			out.append(race.t + maxf(0.0, track.length - r.s) / v)
+	return out
+
+
+## Replay = a free ride on the same track (the round has already scored).
 func _on_card_replay() -> void:
 	sfx.play("click")
-	RaceRiders.maybe_free_card()
-	start_race(world_id)
+	start_race(track_key, "free")
 
 
-## The card's biggest disc: the next new world (GDD 10.3).
-func _on_card_next(id: int) -> void:
+## The card's biggest disc after a league round: the league table (or the
+## season card after round 5).
+func _on_card_next() -> void:
 	sfx.play("click")
-	RaceRiders.maybe_free_card()
-	start_race(id)
+	open_league_screen(true)
 
 
 func _on_card_home() -> void:
 	sfx.play("click")
-	RaceRiders.maybe_free_card()
-	open_track_page()
+	open_league_screen(false)
 
 
 func _open_settings() -> void:
@@ -442,7 +581,7 @@ func _start_lights() -> void:
 
 func _process(delta: float) -> void:
 	_clock += delta
-	if screen == "page" or race == null:
+	if screen in ["page", "league", "board", "season"] or race == null:
 		return
 	if paused:
 		return
@@ -702,8 +841,10 @@ func _on_back() -> void:
 		_close_settings()
 	elif screen == "race":
 		home.press()
-	elif screen == "card":
-		open_track_page()
+	elif screen in ["card", "page", "season"]:
+		open_league_screen(false)
+	elif screen == "board":
+		_on_board_back()
 	else:
 		RaceRiders.save_game()
 		get_tree().quit()
