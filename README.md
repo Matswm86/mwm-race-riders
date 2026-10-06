@@ -4,18 +4,18 @@
 
 <p align="center"><img src="docs/screenshots/02_w1_midrace.jpg" alt="World 1 mid-race: rider 7 in a red jersey chases rivals down a dusty forest trail between pines, a boost pad ahead" width="360"> <img src="docs/screenshots/08_w2_midrace.jpg" alt="World 2 mid-race: the racers ride a red dirt wash between layered sandstone canyon walls" width="360"></p>
 
-A realistic downhill racer for Android, made for children (ages 4-7 on "Lett", 8+ on "Vanlig"). Hold the left or right side of the screen to steer a mountain bike, and later a hoverboard, against five rivals: speed pads, jumps with automatic tricks, gates that swap your vehicle, and a finish in about 45 seconds. Steer into a rival's side to knock it off its bike; rivals can only nudge you, you never fall, and everyone finishes. No ads, no tracking, works offline, no Android permissions.
+A fast, realistic downhill racer for Android, made for children (ages 4-7 on "Lett", 8+ on "Vanlig"). Hold the left or right side of the screen to steer a mountain bike, and later a hoverboard, against five rivals: speed pads, jumps with automatic tricks, gates that swap your vehicle, and a finish in about 45 seconds at 108 km/h cruise (up to 173 km/h on boost). Steer into a rival's side to knock it off its bike; rivals can only nudge you, you never fall, and everyone finishes. No ads, no tracking, works offline, no Android permissions.
 
 Every level is its own world. This build has two:
 
-- **World 1 "Furuløypa / Pine Run"** (950 m): alpine pine forest on a summer afternoon, course tape, hay bales, mud puddles, a gravel river road for the hoverboard, pollen and falling needles in the air.
-- **World 2 "Ørkenjuvet / Red Canyon"** (980 m): a dry wash between red sandstone walls, a rusty water tower, sand drifts (the hoverboard floats over them), rolling tumbleweeds, an old rim highway and the mesa-gap jump, blowing sand.
+- **World 1 "Furuløypa / Pine Run"** (1425 m): alpine pine forest on a summer afternoon, course tape, hay bales, mud puddles, a gravel river road for the hoverboard, pollen and falling needles in the air.
+- **World 2 "Ørkenjuvet / Red Canyon"** (1470 m): a dry wash between red sandstone walls, a rusty water tower, sand drifts (the hoverboard floats over them), rolling tumbleweeds, an old rim highway and the mesa-gap jump, blowing sand.
 
 Finishing a world opens the next one. Rules and numbers: `docs/GDD.md`. Look: `docs/DESIGN.md`.
 
-| Start | Knock-off | Swap gate | Tumbleweed | Card |
+| Boost | Knock-off | Swap gate | Tumbleweed | Card |
 |---|---|---|---|---|
-| ![](docs/screenshots/01_w1_prerace.jpg) | ![](docs/screenshots/03_knockoff.jpg) | ![](docs/screenshots/10_swap_gate.jpg) | ![](docs/screenshots/09_w2_tumbleweed.jpg) | ![](docs/screenshots/04_w1_results_card.jpg) |
+| ![](docs/screenshots/02b_w1_boost.jpg) | ![](docs/screenshots/03_knockoff.jpg) | ![](docs/screenshots/10_swap_gate.jpg) | ![](docs/screenshots/09_w2_tumbleweed.jpg) | ![](docs/screenshots/04_w1_results_card.jpg) |
 
 All screenshots come from the real Godot build (screenshot bot, `tests/capture.tscn`).
 
