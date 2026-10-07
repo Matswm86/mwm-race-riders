@@ -223,16 +223,65 @@ def knock_icons(img):
 
 
 def hand(img):
+    """Tapping hand (QA 2026-10-07: the old one-finger fist read as a rude gesture).
+
+    Index finger up and off-centre, thumb out to the side, the other three fingers curled
+    with knuckle lines, the whole hand tilted 18 deg. Drawn at 4x, then scaled down so the
+    finger tip lands on the sprite anchor.
+    """
     box, tip = sub(img, "hand")
-    s = 180
-    d = ImageDraw.Draw(img)
-    ox, oy = tip
-    finger = (ox - 0.13 * s, oy, ox + 0.13 * s, oy + 0.7 * s)
-    palm = (ox - 0.38 * s, oy + 0.55 * s, ox + 0.48 * s, oy + 1.18 * s)
-    w = 7
-    d.rounded_rectangle(finger, radius=int(s * 0.13), fill=WHITE, outline=INK, width=w)
-    d.rounded_rectangle(palm, radius=int(s * 0.2), fill=WHITE, outline=INK, width=w)
-    d.rectangle((ox - 0.13 * s + w, oy + 0.5 * s, ox + 0.13 * s - w, oy + 0.62 * s), fill=WHITE)
+    k = 4
+    big = Image.new("RGBA", (box[2] * k * 2, box[3] * k * 2), (0, 0, 0, 0))
+    d = ImageDraw.Draw(big)
+    # local design units (1 = 1 atlas px), finger tip at (tx, ty) on the big canvas
+    tx, ty = box[2] * k, box[3] * k // 2
+
+    def P(x, y):
+        return (tx + x * k, ty + y * k)
+
+    def rrect(x0, y0, x1, y1, r, grow, fill):
+        d.rounded_rectangle(
+            (*P(x0 - grow, y0 - grow), *P(x1 + grow, y1 + grow)), radius=(r + grow) * k, fill=fill
+        )
+
+    def thumb(grow, fill):
+        a, b = P(-24, 158), P(-50, 132)
+        wd = (28 + 2 * grow) * k
+        d.line((a, b), fill=fill, width=wd)
+        for c in (a, b):
+            rr = wd / 2
+            d.ellipse((c[0] - rr, c[1] - rr, c[0] + rr, c[1] + rr), fill=fill)
+
+    ow = 7  # outline width in atlas px
+    for grow, fill in ((ow, INK + (255,)), (0, WHITE + (255,))):
+        thumb(grow, fill)
+        rrect(-30, 96, 78, 200, 30, grow, fill)  # fist
+        rrect(-22, 0, 22, 120, 22, grow, fill)  # index finger
+        for i in range(3):  # curled fingers: knuckle bumps right of the index
+            x0 = 20 + i * 19
+            rrect(x0, 80 + i * 5, x0 + 24, 136 + i * 5, 12, grow, fill)
+    # ink detail: knuckle splits, curled finger tips, thumb crease, nail
+    lw = 5 * k
+    for i in range(3):
+        x = 22 + i * 19
+        d.line((P(x, 88 + i * 5), P(x, 130 + i * 5)), fill=INK, width=lw)
+    d.line((P(24, 142), P(76, 150)), fill=INK, width=lw)
+    d.line((P(-20, 150), P(-4, 160)), fill=INK, width=lw)
+    d.rounded_rectangle((*P(-11, 9), *P(11, 30)), radius=8 * k, outline=INK, width=4 * k)
+    big = big.rotate(-18, resample=Image.BICUBIC, center=(tx, ty))
+    bb = big.getbbox()
+    # scale so the whole hand fits the sprite box with the tip on the anchor
+    ax, ay = tip[0] - box[0], tip[1] - box[1]
+    room = min(
+        (ax - 2) / max(1, tx - bb[0]),
+        (box[2] - ax - 2) / max(1, bb[2] - tx),
+        (box[3] - ay - 2) / max(1, bb[3] - ty),
+    )
+    sc = min(1.0 / k, room)
+    small = big.resize((round(big.width * sc), round(big.height * sc)), Image.LANCZOS)
+    stx, sty = round(tx * sc), round(ty * sc)
+    crop = small.crop((stx - ax, sty - ay, stx - ax + box[2], sty - ay + box[3]))
+    img.alpha_composite(crop, (box[0], box[1]))
 
 
 def arrows(img):
