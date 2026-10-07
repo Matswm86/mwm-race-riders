@@ -1,6 +1,6 @@
 # MWM Race Riders: visual design spec
 
-Owner: graphic-designer. Version 2, 2026-10-06 (replaces the toy look of version 1, which the owner rejected: "graphics is way too bad. Should be more modern high end realistic"). The builder reads this before touching any model, material, light, camera or UI node. Game rules and numbers live in `docs/GDD.md`; this file owns the look. Numbers tagged (my calc) are my own arithmetic.
+Owner: graphic-designer. Version 2.1, 2026-10-07 (adds the worlds 3-6 art kit, the World 1/2 landmarks and the World 2 canyon fixes); version 2, 2026-10-06 (replaces the toy look of version 1, which the owner rejected: "graphics is way too bad. Should be more modern high end realistic"). The builder reads this before touching any model, material, light, camera or UI node. Game rules and numbers live in `docs/GDD.md`; this file owns the look. Numbers tagged (my calc) are my own arithmetic.
 
 Mockups (rendered in Blender 4.5 EEVEE from the exported GLBs and real textures, with the game camera; HUD drawn by `tools/art/hud_overlay.py`):
 
@@ -9,6 +9,11 @@ Mockups (rendered in Blender 4.5 EEVEE from the exported GLBs and real textures,
 | `docs/mockups/realistic_mock.png` | World 1 "Furuløypa / Pine Run", 1080x1920: behind the player (#7, 4th), boost pad P2 ahead, rivals #23, #12, #31 ahead, course tape, swap gate G1 in the distance, full HUD |
 | `docs/mockups/realistic_zones.png` | Same frame with the HUD zones: home square (white), gear and boost hit areas (green), wrist strip (red) |
 | `docs/mockups/realistic_mock_w2.png` | World 2 "Ørkenjuvet / Red Canyon": sandstone canyon, water tower, tumbleweed, sand drift, rivals #4, #88, #23, Vanlig race time |
+| `docs/mockups/realistic_mock_w2_fix.png` | World 2 fix check (same frame as `realistic_mock_w2.png`): sky-only HDRI (the pale hill at the canyon end is gone, a fogged mesa wall closes the view), level-strata canyon-wall layer, scanned cliff masses breaking the wall foot (section 10a) |
+| `docs/mockups/realistic_mock_w3.png` | World 3 "Isbreen / Glacier Run": groomed piste with blue dye lines and red flags, ice patch ahead, the blue ice cave in an icefall with seracs, red glacier hut, snow peaks, light snowfall |
+| `docs/mockups/realistic_mock_w4.png` | World 4 "Askefjellet / Ash Mountain": black-ash trail, steam vent puffing on the track, guardrail with glowing lava cracks behind it, basalt columns, smoking crater cone, embers and ash |
+| `docs/mockups/realistic_mock_w5.png` | World 5 "Regnskogen / Rainforest": wet mud trail, mossy log across the track, the fork: rope bridge (left) over the river and the shallow ford (right), buttress tree, big-leaf undergrowth, mist and rain |
+| `docs/mockups/realistic_mock_w6.png` | World 6 "Nattehavna / Night Harbour": wet asphalt quay at night, sodium lamps and light pools, steel plates, cones, a cable spool, the crane-jump container ramp, gantry crane with the amber air ring, ferry and far lit bridge |
 
 Everything is rebuilt by the scripts in `tools/art/` (commands in section 14). Raw CC0 downloads live in `assets/_raw/` (not in git). Licences: `CREDITS.md`.
 
@@ -181,9 +186,22 @@ Flash rule (GDD rule 37) holds: at most 3 bright events per second, never a full
 | Hindrances | `hay_bale.glb` (Block), `mud_puddle.glb` (Patch; vertex alpha fades the edge, glossy roughness 0.1) | Mud: transparent material, `render_priority` -1, no shadow |
 | Farm fences | `fence_rail.glb` (4 m sections) where the GDD narrows the track (Bratthenget) | |
 | Weather | Pollen: 300 `pollen` sprites (white 35%, 2-4 cm) drifting in a 30 m box around the camera; falling needles: 80 thin brown streaks. Sun shafts: 6 additive vertical cards (`speed_streak` stretched, #FFF1DC at 6%) between the trees on the sunny side, only in Høy | <= 400 particles |
-| Landmarks (to build next) | Log cabin, wooden river bridge, rock tunnel, cowbell meadow at the finish: not modelled yet | |
+| Landmarks | `world1/cabin.glb`, `world1/river_bridge.glb` (the K2 hump), `world1/rock_tunnel_portal.glb` + `rock_tunnel_segment.glb` (section 9a) | |
 
 **World 1 palette (60/30/10, measured from the textures, my calc):** 60% earth and trail (#876B51 trail, #815E3A needles), 30% forest (#403E2C pine crowns, #4F3D15 grass) and sky (#9EB3C7 haze), 10% racers, tape red #D2232A and the amber pads.
+
+### 9a. World 1 landmarks (built 2026-10-06, `tools/art/build_landmarks12.py`)
+
+| File | Size (m) | Tris | Place | Godot |
+|---|---|---|---|---|
+| `world1/cabin.glb` | 8.4 x 5.8 x 6.7 | 2,332 | Log cabin with notched corners, turf roof, white-framed windows, stone chimney; door faces -Y. By the start drop or the finish meadow, 12-20 m off the track, door towards the track | Shadows on |
+| `world1/river_bridge.glb` | 14.0 x 5.6 x 22.8 | 3,056 | K2 "bridge hump" (s 645): drive along +Y, deck 10.4 m wide, 1.2 m hump, deck top z 0 at both ends; stone abutments go 3.2 m down to the river | The hump is the K2 kicker; the bridge is its skin |
+| `world1/rock_tunnel_portal.glb` | 34 x 16 x 6.6 | 1,268 | Tunnel mouth at s 810 (and a mirrored copy, yaw 180, at s 870): rock face at y about 0 looking -Y, opening 8 m wide x 6 m high, first 6 m of lining included | Shadows on |
+| `world1/rock_tunnel_segment.glb` | 8.8 x 6.4 x 10 | 472 | Inner lining only (the hill outside is terrain); repeat every 10 m from the portal's y 6; one warm wall lamp per segment in the emission map | Inside the tunnel lower `ambient_light_energy` to 0.35 (an Area3D or a second Environment blend): the sky ambient would otherwise light the inside like day |
+
+### 9b. Cowbell meadow (finish)
+
+Not modelled as its own GLB: it is the World 1 grass layer, `fence_rail.glb` round the meadow and `hay_bale.glb` stacks; cowbells are too small to read at chase distance (four questions: not noticed at 4.8 m behind a moving rider).
 
 ## 10. World 2: "Ørkenjuvet / Red Canyon" (desert canyon, hard midday sun)
 
@@ -191,31 +209,163 @@ Flash rule (GDD rule 37) holds: at most 3 bright events per second, never a full
 
 | Layer | Asset | Godot |
 |---|---|---|
-| Sky | `world2/sky_goegap_2k.hdr` (Poly Haven goegap, hard sun; sun pixel u 0.608, v 0.242 from the top, elevation 46 deg) | Sun `rotation_degrees` (-46, 15, 0), colour #FFF6E8 Color(1.000, 0.965, 0.910), `light_energy` 1.9 |
+| Sky | `world2/sky_goegap_skyonly_1k.exr` (Poly Haven goegap with the hills above the horizon painted out, section 10a; sun pixel u 0.608, v 0.242 from the top, elevation 46 deg) | Sun `rotation_degrees` (-46, 15, 0), colour #FFF6E8 Color(1.000, 0.965, 0.910), `light_energy` 1.9 |
 | Fog (heat haze tint) | depth begin 50 m, end 650 m, colour #D1B394 Color(0.820, 0.702, 0.580), max mix about 30% | |
 | Trail | `terrain_red_laterite_soil_stones_*` (2K), tile 3.2 m | Splat R |
 | Sand floor | `terrain_red_sand_*`, tile 3-4 m | Base |
-| Canyon walls | `terrain_cliff_side_*`, **triplanar** (`uv1_triplanar` / world-position box projection), tile 9 m; walls are terrain rising from 16 m off the centre line in 4.5 m strata ledges up to about 50 m | Splat G by slope |
+| Canyon walls | `terrain_canyon_wall_*` (replaces `terrain_cliff_side_*`; level strata baked in), **world-aligned triplanar** with sand on the ledges (section 10a), tile 9 m; walls are terrain rising from 16 m off the centre line in 4.5 m strata ledges up to about 50 m, topped by `canyon_cliff_a/b.glb` | Splat G by slope |
 | Old rim highway (hoverboard section) | `terrain_worn_asphalt_*`, tile 4 m, faded white edge line as a Decal | |
 | Fallen blocks | `rock_a/b/c.glb` at 1.5-3.5x scale along the wall foot, `albedo_color` Color(1.25, 0.62, 0.42) multiplies the grey scan to sandstone | |
 | Brush | `bush_desert.glb` (Poly Haven wild rooibos rendered to a 3-plane impostor, 6 tris), `dead_trunk.glb` (1,200 tris) | Bush MultiMesh, visibility 120 m |
-| Landmarks | `water_tower.glb` (14 m, rusty steel, start grid and finish). Sandstone arch, gas station and mining-town fronts: not modelled yet | |
+| Landmarks | `water_tower.glb` (14 m, rusty steel, start grid and finish), `world2/sandstone_arch.glb`, `world2/gas_station.glb`, `world2/mesa_backdrop.glb` (section 10a). Mining-town fronts: not modelled yet | |
 | Kicker skin | `ramp_rock.glb` (sandstone lip, same footprint as `ramp.glb`) for K1 "rock lip"; K4 uses `ramp.glb` (wooden loading ramp) | |
 | Hindrances | `sand_drift.glb` (Patch, pale wind-rippled sand, vertex-alpha edge, 15 x 4 m), `tumbleweed.glb` (Roller, 1.2 m, rotate about its centre 0.6 m up while it rolls) | |
 | Weather | Blowing sand: 200 `sand_streak` sprites (#E2B48C, 20%) moving across the track with the wind; 2 distant dust devils (spiralling `dust_puff` columns, 40 particles each) on the canyon floor 150 m+ ahead | <= 300 particles |
 
 **World 2 palette (my calc):** 60% red earth (#643E2E trail, #805945 sand, #7B5231 cliff), 30% sky (#3F6DB5) and pale rock, 10% racers and amber pads.
 
-## 11. Worlds 3-6 (direction only; kits are built when their section tables land)
+### 10a. World 2 fixes and landmarks (2026-10-06)
 
-| World | Sky (Poly Haven, CC0) | Ground and walls | Signature props |
+**Open-left HDRI hill.** The goegap panorama has real hills 5-21 deg above its horizon; where the canyon opens they showed through as a green-beige slope (QA screenshots 08 and 11). Two fixes, use both:
+1. Sky: `world2/sky_goegap_skyonly_1k.exr` (2K `.hdr` beside it). Everything above the horizon up to 21 deg is replaced by the panorama's own clean sky colour fading into a pale warm haze at the horizon; the sun, the upper sky and the ground below the horizon (warm bounce light) are untouched. Swap the `"sky"` path in `RrWorlds.W2.look`; nothing else changes.
+2. Horizon: `world2/mesa_backdrop.glb` (a 120-degree ring segment of mesas and buttes, radius 620-800 m, 35-140 m high, caprock steps, 2,640 tris). Place three copies at yaw 0 / 120 / 240 round the track's middle at scale 1.25, no shadow, fogged, and raise the camera far plane to 1100 m in World 2.
+
+**Canyon-wall stretch.** The wall layer is sampled from one side axis (`rr_terrain.gdshader`, `xside` branch), so faces at about 45 deg and the strata ledges smear the `cliff_side` texture. Replace the wall layer with `terrain_canyon_wall` (ambientCG Rock030 re-coloured to sandstone with level strata beds baked in: texture v = world height) and sample it world-aligned triplanar, with sand on the ledges:
+
+```glsl
+// rock layer: world-aligned triplanar; strata stay level on every wall angle, ledges take the sand layer
+vec3 bw = pow(abs(nw), vec3(4.0));
+bw /= (bw.x + bw.y + bw.z);
+vec3 rx = texture(rock_alb, vec2(wpos.z, -wpos.y) / rock_tile).rgb;
+vec3 rz = texture(rock_alb, vec2(wpos.x, -wpos.y) / rock_tile).rgb;
+vec3 ry = texture(base_alb, wpos.xz / base_tile).rgb;          // sand collects on ledges
+vec3 ra = (rx * bw.x + rz * bw.z + ry * bw.y) * rock_tint;
+```
+Cost (my calc): two extra texture samples on wall pixels only, about 15% of the frame in the canyon; Høy only. Lav keeps the single-axis path but still gets the new texture (its level beds hide most of the stretch). `rock_tile` stays 9 m.
+
+**Cliff silhouettes.** `world2/canyon_cliff_a.glb` (38 x 23 x 20, 2,599 tris) and `canyon_cliff_b.glb` (52 x 19 x 17, 2,999 tris) are Poly Haven Namaqualand cliff scans, decimated and re-skinned with the same strata (baked atlas; or override with the triplanar material above for perfect continuity with the terrain walls). Set 4-6 of them along the wall tops and at the canyon mouths to break the heightfield's smooth outline; shadows on.
+
+| File | Size (m) | Tris | Place |
 |---|---|---|---|
-| 3 Glacier Run | `snowy_hillside` or a clear-sky snow HDRI | Snow and blue ice (scan textures + a cheap fresnel ice shader, no refraction) | Glacier hut, ladder bridge, flag poles, blue seracs |
-| 4 Ash Mountain | A dim hazy HDRI tinted warm, sun low | Black ash, basalt, cooled lava (lava glow only behind rails, emissive) | Crater cone, basalt columns, research station |
-| 5 Rainforest | A forest HDRI after rain | Wet mud, moss, river stones (roughness 0.2-0.4 for wet) | Waterfall (scrolling alpha cards), rope bridge, buttress roots, stone ruins |
-| 6 Night Harbour | A night or dusk HDRI with low energy | Wet steel and asphalt (roughness 0.25), container scans | Containers, gantry cranes, sodium lamps (emissive cards, no real lights beyond 2 omni near the track) |
+| `world2/sandstone_arch.glb` | 45 x 23 x 14 | 2,816 | Natural arch, legs at x +-17 m, about 16 m clearance; the track runs along Y under it (dry wash, s 150-250) |
+| `world2/gas_station.glb` | 22 x 8.2 x 14 | 1,044 | Abandoned station at s 840 on the rim highway, forecourt faces the road (-Y), blank sign (no text) |
 
-Each world keeps the same phone budget (section 12) and swaps only its texture set, HDRI, prop GLBs and particle textures; the racers and the kit are shared.
+## 11. Worlds 3-6 (art kit built 2026-10-06; section tables still come from game-designer)
+
+Same method as worlds 1-2: CC0 scans (Poly Haven, ambientCG) baked into one atlas material per GLB (albedo + OpenGL normal + ORM, plus an emission map where something glows). Every GLB is in `assets/models/world3..6/`, its maps and the terrain sets in `assets/textures/world3..6/`. Sizes below are Godot x / y-up / z in metres, origin on the ground, front = -Z (the race direction). Mocks: `docs/mockups/realistic_mock_w3.png` ... `_w6.png`.
+
+### 11.0 Rules for every new world
+
+1. **Terrain sets** keep the World 1/2 names and channels, so `RrWorld._terrain_material()` loads them unchanged: `terrain_<name>_albedo.jpg` (1024, sRGB, tint baked in), `_normal.jpg` (512, OpenGL), `_arm.jpg` (512, R AO, G roughness, B metal). Map them to the five shader layers `trail`, `base`, `rock`, `verge`, `patch` as each world table says.
+2. **Patches** (`ice_patch`, `snow_drift`, `ash_dune`, `river_ford`) fade at the edge through vertex alpha in **COLOR_0**. Blender 4.5's exporter had put the real alpha in COLOR_1 and a white COLOR_0 first, so Godot (which reads only COLOR_0) drew hard edges; `w36_lib.fix_vertex_alpha()` now repoints COLOR_0, and the same fix was applied to the existing `mud_puddle.glb` and `sand_drift.glb` (originals kept in `assets/_raw/build/*.bak`). Add the new names to `RrMats.PATCHES`.
+3. **Cards:** every impostor (`tree_jungle_*`, `plant_*`, `shrub_jungle`) and every `*_card.glb` is an alpha-scissor material (threshold 0.5, cull disabled), same as the W1 pines. Every near scatter prop has a far version: rocks and seracs swap to their `_card.glb` at 60 m, `basalt_columns` at 80 m, `buttress_tree` at 70 m, `container` to `container_far.glb` at 40 m.
+4. **Emission** lives in the atlas (`*_emission.png`, also in the GLB): ice-cave inner light, lava cracks, crane and ferry lights, lamp heads, the air-ring LED band. Glow (Høy only, threshold 1.2) picks them up; nothing flashes faster than 1 Hz (GDD rule 37).
+5. **Weather** = one GPUParticles3D emitter per world (<= 600 particles) with the world's `fx_*.png`, plus a few static camera-facing cards (spindrift, smoke plume, mist banks) placed by the level builder.
+6. Skies come in two sizes like the slice: `sky_*_2k.hdr` (reference) and `sky_*_1k.exr` (half float, ZIP; what the game loads). All four suns sit at u 0.600-0.605 in their panoramas, the same as World 1, so `sun_rot.y` 135 and `sky_yaw` 0 put every sun behind the camera's right shoulder.
+
+### 11.1 World 3 "Isbreen / Glacier Run" (glacier under a pale-blue sky)
+
+**Mood:** a groomed race piste on a glacier: blue course-dye lines and red flags on white, blue seracs and an icefall ahead, a red mountain hut, sharp snow peaks behind. Bright but not blinding: snow albedo is about 0.8, never pure white, and the exposure comes down.
+
+| Layer | Asset | Godot |
+|---|---|---|
+| Sky | `world3/sky_horn_koppe_snow_1k.exr` (Poly Haven horn-koppe_snow; sun u 0.600, v 0.343 from the top, elevation 28 deg) | `sun_rot` (-28, 135, 0), colour #FFF6EC Color(1.000, 0.965, 0.925), `sun_energy` 1.6; `tonemap_exposure` 0.7 (snow). Keep the valley wall on the sun side under 28 deg (slope <= 0.3) or it shades the whole piste grey (the first mock did exactly that) |
+| Fog | begin 40 m, end 700 m, colour #CCDBF0 Color(0.80, 0.86, 0.94), max 0.35 | |
+| `trail` | `terrain_snow_groomed` (snow_02 with 3 cm snow-cat corduroy ribs; ribs run along the track: rotate the trail UV 90 deg), tile 3 m | |
+| `base` | `terrain_snow`, tile 4 m | |
+| `patch` | `terrain_snow_wind` (wind-packed, aerial scan), tile 9 m, noise patches off the piste | |
+| `rock` | `terrain_glacier_rock` (ambientCG Rock030, cooled grey), triplanar tile 8 m, on the valley walls 30 m+ out | |
+| `verge` | `terrain_snow_wind` | |
+| Snow-cat tracks | `terrain_snowcat_tracks` as a 3.2 m decal strip outside the course (x about +-10.5), v along the track, tile 12 m | Decal or a strip mesh, no shadow |
+| Course edge | `flag_pole.glb` (0.56 x 3.33 x 1.2, 160 tris) every 10 m at x +-6.3, plus blue dye lines: 0.5 m strips at x +-5.4, Color(0.12, 0.30, 0.85) at 60% (game content, not UI) | One MultiMesh per chunk; dye = the `pollen.png` sprite as a strip |
+| Signature | `ice_cave.glb` (21.5 x 11.2 x 24, 2,100 tris; inner width 12.4 m, height 6.6 m; faint blue emission inside = the light ice transmits) set into an icefall (terrain raised about 9.5 m around it), then `crevasse.glb` (40 x 18 x 24, 1,200 tris; 14 m gap after the cave mouth, 18 m deep, under the 22.8 m limit of GDD 6.3) | Cave: shadows on; inside, lower `ambient_light_energy` is not needed thanks to the emission |
+| Kicker skin | `ramp_snow.glb` (packed snow, blue-ice lip, same footprint as `ramp.glb`, 382 tris) | |
+| Hindrances | `ice_patch.glb` (Patch, 6 x 14 m, glossy roughness 0.08, vertex-alpha edge), `snow_drift.glb` (Patch x0.90, 15 x 4 m, 0.36 m), `snow_slough.glb` (Roller, 1.4 m; spin about (0, 0.65, 0)) | Patches: alpha, `render_priority` -1, no shadow |
+| Landmarks | `glacier_hut.glb` (9 x 5.9 x 7.6, 1,118 tris; red planks, snow-loaded roof, door faces -Y), `ladder_bridge.glb` (14 m ladders + orange hand ropes over a side crevasse, 1,340 tris), `serac_a/b.glb` (5-8 m melt-rounded ice blocks, 1,100 tris), `mountain_ridge.glb` (1.6 km band of peaks, 4,608 tris; place 600-850 m out, 3 copies) | Ridge: no shadow, `visibility_range_end` 1200, camera far 1200 in this world |
+| Scenery near / far | `glacier_boulder.glb` (660 tris) -> `glacier_boulder_card.glb` at 60 m; `serac_a/b` -> `serac_card.glb` at 60 m | |
+| Weather | 400 `fx_snowflake` (white 90%, 5-9 cm, slow fall + side drift), 4-8 `fx_spindrift` cards (14 x 5 m, 35%) blowing off the icefall crest; `fx_sun_glare` only when the camera faces the sun (never in the race heading) | <= 450 particles |
+
+**World 3 palette (measured on the mock, my calc):** 60% snow (#7C8AA1 shaded piste to #B6BDC6 sunlit, scan albedo #DFE3ED), 30% sky (#6E859C) and blue ice (#5D829F albedo), 10% racers, red flags, blue dye and the amber pads. The flags use the r1 crimson; if they compete with the player on the phone, shift them to #E04A1A.
+
+### 11.2 World 4 "Askefjellet / Ash Mountain" (volcanic slope, dim orange light)
+
+**Mood:** a black-ash trail under a low, smoky sunset; a cinder cone smokes far off; cooled lava glows red in its cracks behind a steel guardrail; basalt organ pipes and dead charred trees. The light is warm and dim, the ground nearly black, the glow is the only saturated colour besides the racers.
+
+| Layer | Asset | Godot |
+|---|---|---|
+| Sky | `world4/sky_belfast_sunset_puresky_1k.exr` (Poly Haven belfast_sunset_puresky, pre-tinted x(1.05, 0.80, 0.62) and dimmed 15% for volcanic haze; sun u 0.605, elevation 2 deg) | `sun_rot` (-9, 135, 0) (raised from 2 deg so racer shadows stay short enough to read), colour #FFB27A Color(1.000, 0.698, 0.478), `sun_energy` 1.1; `tonemap_exposure` 1.1 |
+| Fog (smoke haze) | begin 25 m, end 520 m, colour #805E45 Color(0.50, 0.37, 0.27), max 0.42 | |
+| `trail` | `terrain_ash_trail` (grey packed ash, #564D43 albedo: lighter than the verges so racers read on it), tile 3.2 m | |
+| `base` | `terrain_ash`, tile 4 m | |
+| `verge` / `patch` | `terrain_ash_soft` (loose grey ash), tile 5 m | |
+| `rock` | `terrain_basalt` (ambientCG Rock035, flattened), triplanar 7 m, ridges 34 m+ out | |
+| Lava (behind rails only) | `lava_field.glb` (14 x 40 m strip, 720 tris; black crust albedo, glow only in the crack emission map) laid in a basin left of the track, `safety_rail.glb` (4 m W-beam section, 100 tris) every 4 m between it and the track | Lava: `emission_energy_multiplier` 2.5, no shadow; rail: MultiMesh, shadows on Høy |
+| Terrain crust layer | `terrain_lava_crust` (cooled crust, glow removed so nothing orange is ever on the track) for crust patches | |
+| Signature | `steam_vent.glb` (3.8 x 0.9 x 3.7, 1,080 tris; fumarole mound with a sulphur-crusted throat, rideable). Every 2 s: 12 `fx_steam_puff` particles up 6 m over 1.2 s (white 55%); the launch window is the puff | |
+| Kicker skin | `ramp_rock.glb` from World 2 with `albedo_color` Color(0.35, 0.33, 0.32) reads as basalt | |
+| Hindrances | `ash_dune.glb` (Patch x0.88, 15 x 4.5 m, 0.3 m, vertex-alpha edge), `falling_rock_a/b.glb` (Roller from the uphill side, 1.0-1.3 m scoria, 500 tris; spin about (0, 0.25, 0) / (0, 0.27, 0)), `lava_crust_ridge.glb` (Hop, 11 x 0.45 x 1.6, ropy pahoehoe crust, no glow) | |
+| Landmarks | `crater_cone.glb` (900 m wide, 270 m high, 3,528 tris; place 1,000-1,200 m out, ahead-right) with 3 `fx_smoke_plume` cards (240-340 m tall) above its rim; `basalt_columns.glb` (26 hexagonal columns up to 7 m, 2,176 tris) -> `basalt_columns_card.glb` at 80 m; `research_station.glb` (two instrument modules on stilts, antenna mast, solar frame; 19.8 x 12.5 x 11.2, 1,532 tris) | Cone and plume: no shadow, camera far 1300 in this world |
+| Scenery | `scoria_rock.glb` (500 tris) -> `scoria_rock_card.glb` at 60 m; `burnt_snag.glb` (charred fallen trunk, 1,200 tris) | |
+| Weather | 260 `fx_ash_flake` (falling, 5-7 cm, Color(0.30, 0.29, 0.28)), 40 `fx_ember` (additive, rising, 4-6 cm, emission 6, under 1 Hz flicker), 8-10 `fx_smoke` haze cards (70 x 26 m, 35%) 60-400 m ahead | <= 350 particles |
+
+**World 4 palette (measured on the mock, my calc):** 60% black ash (#312525 to #4F3B37), 30% smoke haze and sky (#998274, #BAAAA9), 10% lava glow (deep red-orange cracks, emission Color(0.9, 0.16, 0.015) before tonemapping: brighter orange turns yellow-gold on screen), racers, embers and the amber pads. Lava orange appears only behind the rail.
+
+### 11.3 World 5 "Regnskogen / Rainforest" (after rain)
+
+**Mood:** a wet, dark mud trail under a closed canopy, mist hanging between giant trunks, big-leaf undergrowth at the edges, mossy ruins; the track forks: a narrow rope bridge on the left over a deep river, a wide shallow ford on the right.
+
+| Layer | Asset | Godot |
+|---|---|---|
+| Sky | `world5/sky_rainforest_trail_1k.exr` (Poly Haven rainforest_trail; sun u 0.601, elevation 41 deg) | `sun_rot` (-41, 135, 0), colour #FFF2DE Color(1.000, 0.949, 0.871), `sun_energy` 0.7 (this HDRI has no hard sun, peak 247 vs 75,000-360,000 in the others: light under the canopy is diffuse; the tree-card shadows give a soft dapple); `tonemap_exposure` 1.05 |
+| Fog (mist) | begin 18 m, end 260 m, colour #9EAD9E Color(0.62, 0.68, 0.62), max 0.5 | |
+| `trail` | `terrain_mud_wet` (roughness x0.55 = wet), tile 3 m | |
+| `base` | `terrain_forest_moss`, tile 4 m | |
+| `verge` / `patch` | `terrain_mud_leaves` (mud with leaf litter and moss), tile 3.5 m | |
+| `rock` | `terrain_mossy_rock`, triplanar 6 m (river banks, ruins ground) | |
+| Ford bed | `terrain_river_stones` under `river_ford.glb` | |
+| Split path | Bridge route: `rope_bridge.glb` (36 m span, 4.4 m plank deck, 0.9 m sag, A-frame towers 3.4 m clear, 3,144 tris; deck top z 0 at both ends) over the river; ford route: `river_ford.glb` (Patch x0.85 on the bike, board immune; 12 x 18 m shallow water with the stones baked in, roughness 0.05, vertex-alpha edge) | Bridge: shadows on Høy |
+| Signature | `waterfall_rock.glb` (32 x 9.6 x 16.6, 864 tris; dry rock lip |x| < 3 m at the origin, falls at 3 < |x| < 12 m, pool 8.4 m down) + `waterfall_water.glb` (two curtains + foam skirt, 264 tris, alpha blend, cull off, UV-scroll v 1.6 tiles/s) + `pool_water.glb` (30 x 34 m, dark glossy) + `fx_spray` particles at the foot | Water: no shadow, `render_priority` 1 |
+| Hindrances | `log_hop.glb` (Hop, mossy fallen log 11 m across the track, 0.6 m, 1,400 tris), `branch_pile.glb` (Block, 2.9 x 0.7 x 1.4 m, 1,800 tris), `river_ford.glb` (above) | |
+| Landmarks | `buttress_tree.glb` (giant trunk 30 m with 7 plank buttress roots 5-6 m out, moss on the up faces, 948 tris) -> `buttress_tree_card.glb` at 70 m; `stone_ruin.glb` (mossy wall runs, doorway, column drums, fallen blocks; 9.6 x 3.7 x 6.1, 2,600 tris; front -Y); the waterfall and rope bridge | |
+| Canopy and undergrowth | `tree_jungle_a/b.glb` (Poly Haven island trees rendered to 4-plane impostors, 22-24 m, 8 tris), `plant_calathea.glb`, `plant_anthurium.glb`, `shrub_jungle.glb` (3-plane cards, 6 tris, 1.4-4.7 m), plus the World 1 `fern.glb` | Trees: MultiMesh per chunk, visibility 160 m Høy / 90 m Lav, cast shadows within 40 m; undergrowth visibility 35 m (Lav 15 m) |
+| Weather | 200 `fx_rain_streak` (stretched 6 mm x 35 cm, 18%), 10-14 `fx_mist` banks (30 x 12 m, 28%) along the trail, 3-5 `fx_butterfly` (2-frame flap, 14 cm), `fx_spray` at the waterfall | <= 300 particles |
+
+**World 5 palette (measured on the mock, my calc):** 60% wet mud and leaf litter (#282925 to #454035), 30% canopy and moss greens (#2E321E, #454C31, #575F44), 10% racers, pale mist and river glints.
+
+### 11.4 World 6 "Nattehavna / Night Harbour" (industrial port at night)
+
+**Mood:** a wet asphalt quay at night between container stacks; sodium lamps make warm pools on the black ground, a ship-to-shore crane straddles the track with red aviation lights, an amber air ring hangs under its boom, a lit ferry and a far cable-stayed bridge across the water. Night is dark blue, not black: the sky still separates the cranes from it.
+
+| Layer | Asset | Godot |
+|---|---|---|
+| Sky | `world6/sky_qwantani_moonrise_puresky_1k.exr` (Poly Haven qwantani_moonrise_puresky; moon u 0.600, elevation 14 deg) | `PanoramaSkyMaterial.energy_multiplier` 0.035; moonlight `sun_rot` (-14, 135, 0), colour #9FB4D8 Color(0.62, 0.71, 0.85), `sun_energy` 0.2, shadows on; `tonemap_exposure` 1.85; glow on Høy (threshold 1.0) |
+| Fog | begin 30 m, end 600 m, colour #1A1C24 Color(0.10, 0.11, 0.14), max 0.45 | |
+| `trail` | `terrain_asphalt_wet` (roughness x0.45), tile 4 m | |
+| `base` | `terrain_quay_concrete`, tile 5 m | |
+| `patch` | `terrain_steel_plate`, tile 3 m | |
+| `rock` | `terrain_quay_wall` (quay edge drop to the water) | |
+| Lights | `sodium_lamp.glb` (12 m mast, two heads, 376 tris) every 32 m both sides, inner head over the track; `fx_sodium_glow` card (1.5 m) on each head beyond 10 m; `fx_light_pool` additive decal (8 x 9 m, 22%) under each lamp ahead; `fx_wet_reflection` streak cards on the wet asphalt; **2 OmniLight3D** (range 14 m, energy 4, Color(1.0, 0.62, 0.30), no shadow) that follow the two lamps nearest the camera | Decals: `Decal` nodes or additive quads, no shadow |
+| Signature | `crane_jump_stack.glb` (steel approach ramp onto four containers, rides along their roofs, steel kicker lip at y 31.2 m, z 3.84 m; 10.8 x 4.4 x 31.3, 5,556 tris), `gantry_crane.glb` (legs at x +-15 m, portal 38 m, boom over +Y at 44 m, red aviation lights and sodium floods in emission; 31.6 x 67.7 x 78.6, 1,120 tris), `air_ring.glb` (5.2 m ring, amber LED band = "speed for you", hangs on 12 m cables; 824 tris) | Aviation lights: blink 0.5 Hz with `emission_energy`, never faster than 1 Hz |
+| Kicker skin | `ramp_steel.glb` (steel plate, white painted lip, no hazard stripes, 468 tris) | |
+| Hindrances | `steel_plate.glb` (Patch, slide like ice; three wet road plates 7.2 x 6.9 m, roughness 0.14), `traffic_cone.glb` (Block x0.95, 0.75 m, 420 tris), `cable_spool.glb` (Roller, 1.6 m wooden drum with cable; axle along Godot Z, spin about (0, 0.8, 0); 2,912 tris) | |
+| Landmarks | `container.glb` (40 ft, corrugated geometry, 1,260 tris; neutral paint, colour per instance: red #8E2A1F, blue #1F4E8C, green #2E6B3A, grey #8C9196, orange #B8541E via MultiMesh `use_colors` + `vertex_color_use_as_albedo`) -> `container_far.glb` (12 tris) beyond 40 m; `container_stack_far.glb` (48 boxes, 552 tris) for 150 m+; `ferry.glb` (112 m, lit window rows, 2,752 tris; 120 m+ across the water); `warehouse.glb` (50 x 14 x 25, 166 tris, lit doors); `lit_bridge_far.glb` (1.1 km cable-stayed bridge with deck lights, 1,656 tris; 700-1,500 m out) | Far pieces: no shadow; camera far 1300 here |
+| Props | `concrete_barrier.glb` (quay-side jersey barrier, 160 tris, every 1.6 m), `bollard.glb` (192 tris, quay edge every 14 m), `sea_marker.glb` (channel buoy, 1,187 tris) | |
+| Water | Harbour basin and the channel: the game's river material (Color(0.05, 0.08, 0.07) -> use Color(0.006, 0.010, 0.014) here, roughness 0.06) with `world5/water_ripple_normal.png` at scale 0.15 | |
+| Weather | 260 `fx_drizzle` streaks (2 x 36 cm, warm grey 55%); lamp glows as above | <= 300 particles |
+
+**World 6 palette (measured on the mock, my calc):** 60% night asphalt and quay (#0B0806 to #2B1F14, lamp-lit #71573B), 30% night sky (#212D3A to #2E3D4B) and steel, 10% sodium orange (#FF9C38 pools), container colours, racers, the amber ring and pads. Keep the sky dark blue, never black: it is what separates the crane from the night.
+
+### 11.5 HUD and racer contrast on worlds 3-6 (my calc, WCAG 2.x on the mock pixels behind each element)
+
+| Pair | W3 Glacier | W4 Ash | W5 Rainforest | W6 Night | Need |
+|---|---|---|---|---|---|
+| Gear disc edge (ink disc / white ring) | 7.4 / 2.4:1 | 8.7 / 2.1:1 | 1.7 / 10.5:1 | 1.4 / 12.5:1 | 3.0 (one edge) |
+| Progress bar (ink bar / white track vs background) | 9.1:1 / - | 7.0:1 / - | 2.9:1 / 6.3:1 | 1.6:1 / 11.1:1 | 3.0 (one edge) |
+| Place disc (white fill / 5 px ink ring vs background) | 2.0 / 9.0:1 | 2.6 / 6.8:1 | 6.8:1 / - | 11.0:1 / - | 3.0 (one edge) |
+| Boost disc (ink disc / white ring vs trail) | 9.0 / 2.0:1 | 2.2 / 8.0:1 | 1.4 / 12.8:1 | 1.1 / 16.3:1 | 3.0 (one edge) |
+| White icons and digits on ink, amber on ink | 18.0 and 9.8:1 everywhere | | | | 3.0 / 4.5 |
+
+Every HUD element keeps at least one edge at 3:1 or more because of the rule "ink disc + white ring" (section 5): on snow the ink carries it, in the forest and at night the white ring and the white track do. Never drop either. Racers: on the snow the dark pants give 8.8:1; on black ash (W4) and night asphalt (W6) the dark pants merge with the ground (1.1-1.2:1) and the crimson jersey is 1.2-2.6:1 in luminance, so there the rider reads by hue, the white numbers and the white side trim, plus the ground dust. That is why the W4 trail is a grey packed ash (#564D43 albedo) rather than the black ash of the verges; if a phone screenshot shows riders sinking into the W6 asphalt, add a soft additive `contact_shadow`-shaped light pool under each racer only in W6 (1 draw, the lamps' "bounce").
 
 ## 12. Phone budget (Høy = mid-range phone, 60 fps; numbers are my calc for the mock frames)
 
@@ -228,6 +378,19 @@ Each world keeps the same phone budget (section 12) and swaps only its texture s
 | Transparency | Mud, sand drift, dust, sand streaks, contact quads; trees and grass are alpha *scissor* (opaque pipeline) | | | Same |
 
 Import settings: every albedo / ORM / normal PNG and JPG as VRAM Compressed (ETC2 on Android; `rendering/textures/vram_compression/import_etc2_astc` is already on), mipmaps on, normal maps with *Normal Map* = Enable. The tree and grass atlases: *Fix Alpha Border* on, mipmaps on, alpha scissor material. HDRIs: no VRAM compression.
+
+### 12a. Worlds 3-6 frame estimates (my calc; frame = the mock view, Høy, racers as in section 12)
+
+Shared base in every world: racers 12 draws + their shadow pass 12, terrain 6, kit 3, sky 1, particles 1-3, contact quads 1, HUD 10 = about 47 draws; racers about 46k tris + their shadows 46k + terrain 18k + kit 4k = about 114k tris.
+
+| World | Extra draws (MultiMesh per kind and chunk) | Extra tris in view | Total draws / tris (Høy) | Texture memory added (ETC2, mips) | Lav |
+|---|---|---|---|---|---|
+| 3 Glacier | flags 1, seracs 2 + card 1, boulders 1 + card 1, cave 1, hut 1, ridge 1, patch/drift/slough 3, dye + cat strips 2, spindrift cards 1, shadow casters 3 = 19 | flags 40 x 160 = 6.4k, seracs 10 x 1.1k = 11k, boulders 15 x 660 = 10k, cave 2.1k, hut 1.1k, ridge 3 x 4.6k = 13.8k, hindrances 2.3k = 47k | **66 / 161k** | about 26 MB (5 terrain sets 9 MB, props 1024 x 6 = 8 MB, cards 3 MB, sky 1k 3 MB, fx 1 MB, ridge 2 MB) | 47 / 82k: no shadows, ridge 1 copy, seracs as cards beyond 40 m |
+| 4 Ash | rails 1, lava 1, columns 1 + card 1, scoria 1 + card 1, snags 1, vent 1, dune/ridge/rock 3, station 1, cone 1, plume/haze cards 2, shadow casters 3 = 19 | rails 70 x 100 = 7k, lava 5 x 720 = 3.6k, columns 6 x 2.2k = 13k, scoria 20 x 500 = 10k, snags 5 x 1.2k = 6k, vent 1.1k, hindrances 2.1k, station 1.5k, cone 3.5k = 48k | **66 / 162k** | about 28 MB | 47 / 84k |
+| 5 Rainforest | trees 2 kinds x 4 chunks = 8 + their shadows 8, undergrowth 4, fern 1, buttress 1 + card 1, ruin 1, log 1, branches 1, bridge 1, ford 1, water 1, mist/rain/butterflies 2 = 31 | trees 900 x 8 = 7.2k, undergrowth 400 x 6 = 2.4k, ferns 12 x 900 = 11k, buttress 2 x 950 = 1.9k, ruin 2.6k, log 1.4k, branches 1.8k, bridge 3.1k, ford 0.7k, tree shadows 5k = 37k | **78 / 151k** | about 34 MB (two 2048 x 512 tree atlases, three card atlases) | 51 / 70k: no shadows, undergrowth 15 m, ferns off |
+| 6 Night Harbour | containers near 1 + far 1, stacks far 1, barriers 1, bollards 1, lamps 1, glow/pool/reflection cards 3, crane 1, jump stack 1, ring 1, plates/cones/spool 3, ferry 1, warehouse 1, bridge 1, buoy 1, water 1, shadow casters 3 = 25 | containers 20 x 1.26k = 25k + 100 x 12 = 1.2k, barriers 60 x 160 = 9.6k, lamps 8 x 376 = 3k, bollards 2k, crane 1.1k, stack 5.6k, ring 0.8k, hindrances 4.8k, ferry 2.8k, bridge 1.7k, far stacks 1.7k = 60k | **72 / 174k** | about 30 MB | 51 / 88k: no shadows, 1 omni, containers all `container_far` beyond 25 m |
+
+Two OmniLight3D in World 6 add per-object light cost, not draws (Mobile renderer, forward+ clustered): keep them at range 14 m so they touch about 15 objects. World 5 is the risk at 120 fps: alpha-scissor foliage near the camera is overdraw, not draws. If the Høy frame time climbs, first drop the undergrowth range to 25 m, then the tree shadow range to 25 m.
 
 ## 13. Four questions for the features in this spec
 
@@ -242,6 +405,13 @@ Import settings: every albedo / ORM / normal PNG and JPG as VRAM Compressed (ETC
 | SSAO | Barely at chase distance | Not on Mobile | Baked AO in every ORM | Yes | Use the trick |
 | Grass cards beyond 30 m | No | Overdraw | Grass splat layer in the terrain | Yes | **Cut** beyond 30 m |
 | Motion blur | Would read as speed | Not cheap on Mobile | Dust, speed streaks on boost, FOV kick | Yes | Use the trick |
+| Ice-cave inner glow (W3) | Yes: the cave is the signature and would be a black hole without GI | 0 (emission in the atlas) | That is the trick | Yes | **Keep** |
+| Real refraction on ice / water (W3, W5) | Would be noticed up close only | Screen texture read, extra pass | Low roughness + sky reflection + baked stones under the ford | Yes | Use the trick |
+| Lava light on the surroundings (W4) | A little on the rail and the racers' left side | A real light per lava strip | Emission + glow on the strip only; warm fog | Yes | Use the trick |
+| Corrugated container geometry (W6) | Yes within 40 m (silhouette and light rake on the ribs) | 1,260 tris each | `container_far.glb` (12 tris, ribs in the normal map) beyond 40 m | Yes | **Keep near, swap at 40 m** |
+| Night lamp light (W6) | Yes: it is the whole look | Each OmniLight costs per lit object | 2 omni near the camera + additive light-pool decals + lamp glow cards for all others | Yes | Use the trick |
+| Foliage cards in the rainforest (W5) | Yes as a canopy | Overdraw near the camera | Fewer, larger cards; undergrowth range 35 m | Yes | Keep, watch the 120 fps frame time |
+| Far backdrops (mountain ridge, crater cone, mesa ring, lit bridge) | Yes: they close the horizon and fix the HDRI-ground problem | 1 draw, 2-5k tris, no shadow | A painted HDRI band | Yes | **Keep** |
 
 ## 14. Do and don't
 
@@ -277,6 +447,22 @@ python3 tools/art/hud_overlay.py assets/_raw/build/mock_w2_raw.png docs/mockups/
 ```
 Pose check sheet: `blender -b --factory-startup assets/_raw/build/rider_rigged.blend -P tools/art/preview_poses.py -- <out_dir>`.
 
+Worlds 3-6 and the World 1/2 landmarks (2026-10-06):
+```
+python3 tools/art/fetch_worlds36.py                         # CC0 downloads (Poly Haven, ambientCG) -> assets/_raw/
+python3 tools/art/make_terrain36.py                         # terrain sets world3..6 + world2 canyon_wall
+python3 tools/art/make_fx36.py                              # weather/effect sprites, waterfall strip, ripple normal
+blender -b --factory-startup -P tools/art/make_skies36.py   # skies (2k hdr + 1k exr), world2 sky-only
+blender -b --factory-startup -P tools/art/build_w3.py       # likewise build_w4.py, build_w5.py, build_w6.py
+blender -b --factory-startup -P tools/art/build_landmarks12.py
+python3 tools/art/glb_slim.py assets/models/world*/*.glb    # opaque PNGs inside the GLBs -> JPEG (disk size only)
+python3 tools/art/tex_slim.py assets/textures/world3/*.png   # loose opaque PNGs -> JPEG (RrMats finds .png or .jpg); skip water_ripple_normal.png
+blender -b --factory-startup -P tools/art/mock_w36.py -- 3 assets/_raw/build/mock_w3_raw.png
+python3 tools/art/hud_overlay.py assets/_raw/build/mock_w3_raw.png docs/mockups/realistic_mock_w3.png --place 4 --progress 0.131 --rivals 0.151,0.143,0.138,0.12,0.108
+blender -b --factory-startup -P tools/art/preview36.py -- <hdri> <out_dir> world3/ice_cave ...   # GLB check renders
+```
+Every GLB the new scripts write passes `tools/art/glb_fix.py` (COLOR_0 = edge-fade alpha, TEXCOORD_0 = baked atlas), so none of them needs `RrMats.UV2_MODELS`. The build scripts append to `assets/_raw/build/w36_report.json` (size, tris, bytes per GLB); `tools/art/sheet36.py` turns preview tiles into a labelled sheet.
+
 ## 17. Visual tier and sign-off
 
 Premium realistic 3D. The hero scene is World 1, s 180-320 as in `realistic_mock.png`. The owner signs it off from the builder's **real Godot screenshot** (not this mock) before more track is built; World 2 follows from its own screenshot. What is still below the bar is listed in the graphic-designer's report of 2026-10-06 and in section 18.
@@ -288,4 +474,11 @@ Premium realistic 3D. The hero scene is World 1, s 180-320 as in `realistic_mock
 - Faces are never shown (visor + goggles); the eye port is dark. Fine for racing, weak for a podium close-up.
 - Canyon walls are a heightfield with strata steps; they need 3-4 large sandstone cliff meshes for real overhangs and silhouettes.
 - Track has no braking bumps, roots or berm geometry in the mesh yet: the texture and the riding-line darkening carry it.
-- Landmarks listed in GDD 6.0 (cabin, bridge, tunnel, arch, gas station, mining town) are not modelled.
+- Mining-town fronts (World 2 finish street) are still not modelled.
+- Worlds 3-6 (mocks of 2026-10-06): far backdrops (`mountain_ridge`, `crater_cone`, terrain valley walls) are clean procedural shapes; at full screen they read a little smooth and faceted next to the scanned props. Fix later with 2-3 scanned cliff meshes per world in the middle distance, like `canyon_cliff_a/b`.
+- World 4 lava field is a flat 40 m strip of crust with glowing cracks: it reads as lava at 20 m, but it has no flow shapes (lobes, levees). Two or three sculpted lobe meshes would sell it from further away.
+- World 5 canopy trees are Poly Haven island trees (temperate-looking crowns) scaled to 23 m; no scanned tropical tree with buttresses and lianas exists in CC0 yet. The buttress tree and the big-leaf undergrowth carry the "rainforest" read; no lianas yet.
+- World 5 waterfall (`waterfall_rock` + `waterfall_water` + `pool_water`) was modelled but is not in the mock frame (the frame shows the split path); check it in the first Godot screenshot.
+- World 6 lamp reflections on the wet asphalt are additive decals, not real reflections; they do not move with the camera angle the way real ones do.
+- World 3 crevasse and ladder bridge, World 4 research station, World 6 warehouse are modelled but outside the mock frames.
+- Mocks are Blender EEVEE stand-ins with the game camera; the owner signs off each world from the builder's real Godot screenshot (section 17).
