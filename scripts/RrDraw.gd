@@ -323,11 +323,14 @@ static func jersey_disc(
 	ci.draw_circle(c, r, hue)
 	ci.draw_arc(c, r - 1.5, 0.0, TAU, 40, WHITE, 3.0, true)
 	var light: bool = hue.get_luminance() > 0.55
-	text_centered(ci, str(number), c + Vector2(0, 1), int(r * 1.15), INK if light else WHITE)
-	var b: Vector2 = c + Vector2(r * 0.86, r * 0.62)
-	ci.draw_circle(b, r * 0.6, INK)
-	ci.draw_arc(b, r * 0.6, 0.0, TAU, 24, WHITE, 2.0, true)
-	helmet_icon(ci, icon, b, r * 0.4, WHITE)
+	# Two digits a little smaller so both fit inside the disc (QA 2026-10-07).
+	var fs: int = int(r * (1.15 if number < 10 else 0.95))
+	text_centered(ci, str(number), c + Vector2(0, 1), fs, INK if light else WHITE)
+	# The helmet badge sits lower-left, clear of the digits and of the name.
+	var b: Vector2 = c + Vector2(-r * 1.1, r * 0.55)
+	ci.draw_circle(b, r * 0.5, INK)
+	ci.draw_arc(b, r * 0.5, 0.0, TAU, 24, WHITE, 2.0, true)
+	helmet_icon(ci, icon, b, r * 0.34, WHITE)
 
 
 ## The player's own disc: crimson r1 jersey with the big down chevron.
