@@ -7,7 +7,7 @@ extends RefCounted
 ## at runtime. Pro tracks reuse their base track's bake, mirrored in X.
 ## Bump VERSION with every change to RrWorldGen or a track's data.
 
-const VERSION: int = 16
+const VERSION: int = 17
 const PATH := "res://assets/generated/%s.res"
 
 

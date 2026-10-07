@@ -14,7 +14,7 @@ extends RefCounted
 const SAMPLE_STEP: float = 2.0
 const ROW_STEP: float = 3.0
 const STRIP_CHUNK: float = 200.0  # draw budget: fewer, longer ground chunks
-const FAR_STEP: float = 12.0
+const FAR_STEP: float = 16.0  # APK size: coarser far grid under the fog
 const FAR_CHUNK: float = 600.0
 const FAR_PAD: float = 420.0
 ## Lateral offsets past the track edge for the strip, per world (m).
@@ -44,6 +44,10 @@ const OUT_W2: Array[float] = [
 	35.0,
 	40.0,
 	44.0
+]
+## Worlds 3, 4 and 6: walls and quay edges start well out, so fewer columns.
+const OUT_W36: Array[float] = [
+	0.25, 0.7, 1.3, 2.1, 3.2, 4.6, 6.5, 9.0, 12.0, 16.0, 21.0, 27.0, 34.0, 44.0
 ]
 const IN_LATS: Array[float] = [-1.0, -0.75, -0.45, -0.2, 0.0, 0.2, 0.45, 0.75, 1.0]
 ## W5 split path: finer columns across the trail so the river dips under the
@@ -113,7 +117,9 @@ func build(trk: RrTrack) -> void:
 
 
 func _outs() -> Array[float]:
-	return OUT_W1 if world == 1 or world == 5 else OUT_W2
+	if world == 1 or world == 5:
+		return OUT_W1
+	return OUT_W2 if world == 2 else OUT_W36
 
 
 ## Per-track scenery knob (tools/track_gen.py flavor), default = track 1.
