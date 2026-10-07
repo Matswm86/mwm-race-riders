@@ -17,14 +17,16 @@ extends Node
 ## instead of promoting, and the season can be replayed forever.
 ## Progress is per track (best time, best place, ghost, medal); the ladder
 ## lives in an RrLeague. Saves from the two-world slice (version 1) migrate:
-## world N's best run becomes track wN_t1's.
+## world N's best run becomes track wN_t1's. Version 2 (the Bronze/Silver
+## ladder) migrates to 3 (six leagues) keeping everything; a Silver winner
+## moves on to Gold III (RrLeague.migrate_v2).
 
 signal level_card_shown(track_id: int)
 signal free_levels_finished
 signal settings_changed
 
 const SAVE_PATH := "user://race_riders_save.json"
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
 const SHELL_META := &"mwm_play_shell"
 
 var full_unlock: bool = true
@@ -383,6 +385,15 @@ func _load_progress(d: Dictionary) -> void:
 		league.from_dict(lg)
 	var pk: Variant = d.get("parked_league", {})
 	parked_league = pk if pk is Dictionary else {}
+	if version < 3:
+		# Version 2 = the two-world ladder (Bronze, Silver): see migrate_v2.
+		migrated_from = version
+		league.migrate_v2()
+		if not parked_league.is_empty():
+			var pl := RrLeague.new()
+			pl.from_dict(parked_league)
+			pl.migrate_v2()
+			parked_league = pl.to_dict()
 	if league.save_seed == 0:
 		_new_seed()
 

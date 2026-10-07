@@ -139,6 +139,9 @@ var demotion_on: bool = RrBalance.DEMOTION_DEFAULT_ON
 var save_seed: int = 0
 ## The player has won the last built league; stays in its tier I.
 var top_done: bool = false
+## Set by the version-2 -> 3 save migration when a Silver winner was mid-way
+## through a replay season: that season's end promotes to Gold III anyway.
+var owed_promotion: bool = false
 
 
 func _init() -> void:
@@ -171,7 +174,8 @@ static func home_world(lg: int) -> int:
 
 
 ## The 5 rounds of a tier (GDD 17.2). Tier II previews the next world's
-## tracks 1-2; while that world is not built, home Pro tracks 2 and 4 stand in.
+## tracks 1-2; Champion (world 6) previews the Pro track 1 of worlds 1 and 2.
+## While a next world is not built, home Pro tracks 2 and 4 stand in.
 static func rounds_of(lg: int, tr: int) -> Array[String]:
 	var w: int = home_world(lg)
 	var out: Array[String] = []
@@ -182,7 +186,10 @@ static func rounds_of(lg: int, tr: int) -> Array[String]:
 		1:
 			for k: int in [6, 7, 8]:
 				out.append(RrTracks.key(w, k))
-			if w + 1 <= RrBalance.WORLDS_BUILT:
+			if w >= RrBalance.WORLDS:
+				out.append(RrTracks.key(1, 1, true))
+				out.append(RrTracks.key(2, 1, true))
+			elif w + 1 <= RrBalance.WORLDS_BUILT:
 				out.append(RrTracks.key(w + 1, 1))
 				out.append(RrTracks.key(w + 1, 2))
 			else:
@@ -427,7 +434,8 @@ func end_season(easy: bool, locked: bool) -> Dictionary:
 	if locked:
 		stuck = 0
 	else:
-		var up: bool = rank <= RrBalance.PROMOTE_TOP
+		var up: bool = rank <= RrBalance.PROMOTE_TOP or owed_promotion
+		owed_promotion = false
 		if not up and easy and stuck >= RrBalance.LETT_SAFETY_SEASONS:
 			up = true
 			res["safety"] = true
@@ -531,6 +539,7 @@ func to_dict() -> Dictionary:
 		"demotion_on": demotion_on,
 		"save_seed": save_seed,
 		"top_done": top_done,
+		"owed_promotion": owed_promotion,
 	}
 
 
@@ -561,6 +570,25 @@ func from_dict(d: Dictionary) -> void:
 	demotion_on = bool(d.get("demotion_on", RrBalance.DEMOTION_DEFAULT_ON))
 	save_seed = int(d.get("save_seed", 0))
 	top_done = bool(d.get("top_done", false))
+	owed_promotion = bool(d.get("owed_promotion", false))
+
+
+## Version-2 saves were made when Silver was the last league: a player who
+## won it (top_done) moves on to Gold III now that worlds 3-6 exist. Nothing
+## else changes (points, boards, rewards, trophies are kept). A season in
+## progress is finished first, then promotes (owed_promotion).
+func migrate_v2() -> void:
+	if not top_done:
+		return
+	top_done = false
+	if league == 1 and tier == RrBalance.TIERS_PER_LEAGUE - 1:
+		if round_i == 0:
+			league = 2
+			tier = 0
+			stuck = 0
+			_reset_season()
+		else:
+			owed_promotion = true
 
 
 static func _fill(dst: Array[int], src: Variant, fallback: int) -> void:

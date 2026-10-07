@@ -2,8 +2,8 @@ class_name RrTrackPage
 extends Control
 
 ## Free ride (GDD 17.2): any open track or Pro variant, raced alone for no
-## points, with its ghost. Two world discs at the top switch the world (only
-## world 1 in the MWM Play free part); a 4 x 4 grid of track tiles shows
+## points, with its ghost. Six world discs at the top (two rows of three)
+## switch the world (only world 1 in the MWM Play free part); a 4 x 4 grid of track tiles shows
 ## tracks 1-8 and their Pro variants (warm, mirrored picture, sun-down mark),
 ## each with its medal flag and best time. A tile opens that track's board.
 ## The home disc bottom-left goes back to the league screen (the top-left
@@ -14,7 +14,11 @@ signal board_requested(key: String)
 signal back_pressed
 
 const TILE := Vector2(210, 200)
-const GRID_Y: float = 500.0
+const GRID_Y: float = 600.0
+const ROW_STEP: float = 205.0
+## World disc centres: two rows of three, clear of the shell's 232 px square.
+const DISC_X: Array[float] = [340.0, 590.0, 840.0]
+const DISC_Y: Array[float] = [250.0, 470.0]
 
 var world: int = 1
 var tiles: Array[RrTrackTile] = []
@@ -30,7 +34,8 @@ func _ready() -> void:
 		d.picture_world = w
 		d.disc_radius = 92.0
 		d.size = Vector2(210, 210)
-		d.position = Vector2(540.0 + (float(w) - 1.5) * 300.0, 330.0) - d.size * 0.5
+		var c := Vector2(DISC_X[(w - 1) % 3], DISC_Y[(w - 1) / 3])
+		d.position = c - d.size * 0.5
 		d.tapped.connect(
 			func() -> void:
 				world = w
@@ -42,7 +47,7 @@ func _ready() -> void:
 	back_disc.icon = "home"
 	back_disc.disc_radius = 100.0
 	back_disc.size = Vector2(220, 220)
-	back_disc.position = Vector2(170, 1480) - back_disc.size * 0.5
+	back_disc.position = Vector2(170, 1540) - back_disc.size * 0.5
 	back_disc.tapped.connect(func() -> void: back_pressed.emit())
 	add_child(back_disc)
 	visible = false
@@ -76,7 +81,7 @@ func refresh() -> void:
 			tile.medal = RaceRiders.medal(key)
 			tile.best_s = RaceRiders.best_time(key)
 			tile.size = TILE
-			tile.position = Vector2(90.0 + float(col) * 230.0, GRID_Y + float(row) * 220.0)
+			tile.position = Vector2(90.0 + float(col) * 230.0, GRID_Y + float(row) * ROW_STEP)
 			tile.tapped.connect(func() -> void: board_requested.emit(key))
 			add_child(tile)
 			tiles.append(tile)
