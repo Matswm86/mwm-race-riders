@@ -4,8 +4,9 @@ extends Node3D
 ## Effects of one world (DESIGN 7, 9-10): the dust pool and flake pool (one
 ## MultiMesh draw each), knock-off stones, contact-shadow quads for Lav, the
 ## hoverboard under-glow, and the world's weather (W1 pollen, falling needles
-## and sun shafts; W2 blowing sand and two distant dust devils). Flash rule:
-## nothing here flashes; puffs only fade.
+## and sun shafts; W2 blowing sand and two distant dust devils; W3 snowfall;
+## W4 ash flakes and rising embers; W5 rain streaks; W6 drizzle), and the W4
+## steam-vent puffs. Flash rule: nothing here flashes; puffs only fade.
 
 var track: RrTrack
 var look: Dictionary = {}
@@ -53,6 +54,10 @@ func tick(race: RrRace, dt: float, camera: Camera3D, cam_yaw: float) -> void:
 func _sprite_mat(
 	tex_name: String, additive: bool = false, shaded: bool = false
 ) -> StandardMaterial3D:
+	return _sprite_mat_at("res://assets/textures/fx/%s.png" % tex_name, additive, shaded)
+
+
+func _sprite_mat_at(path: String, additive: bool, shaded: bool) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.shading_mode = (
 		BaseMaterial3D.SHADING_MODE_PER_PIXEL if shaded else BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -60,7 +65,7 @@ func _sprite_mat(
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD if additive else BaseMaterial3D.BLEND_MODE_MIX
 	m.vertex_color_use_as_albedo = true
-	m.albedo_texture = load("res://assets/textures/fx/%s.png" % tex_name)
+	m.albedo_texture = load(path)
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	return m
@@ -80,6 +85,8 @@ func _build_fx() -> void:
 	var rm: Material = RrMats.for_mesh(rock)
 	if track.world_id == 2:
 		rm = RrWorld.sandstone(rm as StandardMaterial3D)
+	elif track.world_id == 4:
+		rm = RrWorld._tinted(rm as StandardMaterial3D, Color(0.3, 0.28, 0.27))
 	_stones.setup(8, rock, rm, false)
 	add_child(_stones)
 	# Contact shadow quads under each racer (Lav: the sun casts no shadow).
@@ -115,6 +122,12 @@ func _build_fx() -> void:
 
 
 func _particles(amount: int, life: float, tex_name: String, size: Vector2) -> GPUParticles3D:
+	return _particles_at(amount, life, "res://assets/textures/fx/%s.png" % tex_name, size, false)
+
+
+func _particles_at(
+	amount: int, life: float, path: String, size: Vector2, additive: bool
+) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
 	p.amount = amount
 	p.lifetime = life
@@ -123,7 +136,7 @@ func _particles(amount: int, life: float, tex_name: String, size: Vector2) -> GP
 	p.visibility_aabb = AABB(Vector3(-40, -20, -40), Vector3(80, 40, 80))
 	var q := QuadMesh.new()
 	q.size = size
-	var m := _sprite_mat(tex_name)
+	var m := _sprite_mat_at(path, additive, false)
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	q.material = m
 	p.draw_pass_1 = q
@@ -133,9 +146,63 @@ func _particles(amount: int, life: float, tex_name: String, size: Vector2) -> GP
 	return p
 
 
+## Falling weather for worlds 3-6 (DESIGN 11): one box emitter round the
+## camera; W4 adds rising embers (Høy only, like every second layer).
+func _build_weather36(kind: String) -> void:
+	var d: String = "res://assets/textures/world%d/" % track.world_id
+	var spec: Dictionary = {
+		"snow":
+		["fx_snowflake", 400, 6.0, Vector2(0.07, 0.07), Vector3(0.6, -1.1, 0.2), 0.9, false],
+		"ash":
+		["fx_ash_flake", 260, 6.0, Vector2(0.06, 0.06), Vector3(0.4, -0.8, 0.1), 0.85, false],
+		"rain":
+		["fx_rain_streak", 200, 0.9, Vector2(0.03, 0.35), Vector3(0.0, -14.0, 0.0), 0.18, false],
+		"drizzle":
+		["fx_drizzle", 260, 1.2, Vector2(0.02, 0.36), Vector3(0.3, -9.0, 0.0), 0.55, false],
+	}
+	var sp: Array = spec.get(kind, spec["snow"])
+	var p: GPUParticles3D = _particles_at(
+		int(sp[1]), float(sp[2]), d + String(sp[0]) + ".png", sp[3], false
+	)
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(15, 8, 18)
+	var v: Vector3 = sp[4]
+	pm.direction = v.normalized()
+	pm.spread = 8.0
+	pm.initial_velocity_min = v.length() * 0.8
+	pm.initial_velocity_max = v.length() * 1.2
+	pm.gravity = Vector3.ZERO
+	pm.color = Color(1, 1, 1, float(sp[5]))
+	if kind == "rain" or kind == "drizzle":
+		# Streaks hang along their fall: no billboard spin.
+		(p.draw_pass_1.surface_get_material(0) as StandardMaterial3D).billboard_mode = (
+			BaseMaterial3D.BILLBOARD_FIXED_Y
+		)
+	p.process_material = pm
+	if kind == "ash":
+		var em: GPUParticles3D = _particles_at(
+			40, 3.0, d + "fx_ember.png", Vector2(0.05, 0.05), true
+		)
+		var am := ParticleProcessMaterial.new()
+		am.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+		am.emission_box_extents = Vector3(14, 2, 16)
+		am.direction = Vector3(0.1, 1.0, 0.0)
+		am.spread = 25.0
+		am.initial_velocity_min = 0.8
+		am.initial_velocity_max = 1.6
+		am.gravity = Vector3.ZERO
+		am.color = Color(1.0, 0.45, 0.12, 0.9)
+		em.process_material = am
+
+
 ## One weather emitter per world plus distance dressing (DESIGN 9, 10).
 func _build_weather() -> void:
-	if String(look["weather"]) == "pollen":
+	var wk: String = String(look["weather"])
+	if wk in ["snow", "ash", "rain", "drizzle"]:
+		_build_weather36(wk)
+		return
+	if wk == "pollen":
 		var pollen: GPUParticles3D = _particles(300, 7.0, "pollen", Vector2(0.04, 0.04))
 		var pm := ParticleProcessMaterial.new()
 		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
@@ -269,7 +336,12 @@ func _update_weather(race: RrRace, camera: Camera3D, yaw: float) -> void:
 	var rt: Vector3 = RrTrack.right_of(yaw)
 	if _weather.is_empty():
 		return
-	if String(look["weather"]) == "pollen":
+	var wk: String = String(look["weather"])
+	if wk in ["snow", "ash", "rain", "drizzle"]:
+		for i: int in _weather.size():
+			_weather[i].global_position = p + fwd * 12.0 + Vector3.UP * (4.0 if i == 0 else -2.0)
+		return
+	if wk == "pollen":
 		_weather[0].global_position = p + fwd * 10.0
 		_weather[1].global_position = p + fwd * 12.0 + Vector3.UP * 3.0
 		if _shafts != null:
@@ -336,6 +408,15 @@ func confetti(pos: Vector3) -> void:
 		var col: Color = RrRace.TEAM[i % 6]
 		var v := Vector3(_rng.randf_range(-3, 3), _rng.randf_range(2, 6), _rng.randf_range(-3, 3))
 		_flakes.emit(pos, v, col, 1.8, 0.12, 0.10, 1.0, 1.2, 2.5)
+
+
+## W4 steam vent puff (DESIGN 11.2): 12 white puffs up about 6 m in 1.2 s.
+func steam(pos: Vector3) -> void:
+	for i: int in 12:
+		var a: float = _rng.randf() * TAU
+		var o := Vector3(cos(a), 0.0, sin(a)) * _rng.randf_range(0.2, 0.8)
+		var v := Vector3(o.x, _rng.randf_range(4.0, 6.0), o.z)
+		_dust.emit(pos + o, v, Color(1, 1, 1), 1.2, 0.8, 3.0, 0.55, 1.2, 0.0)
 
 
 func dust_color() -> Color:

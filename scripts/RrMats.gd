@@ -8,13 +8,42 @@ extends RefCounted
 ## ORM = R ambient occlusion, G roughness, B metallic. Racers get a duplicate
 ## per livery with only the albedo swapped (DESIGN 2b).
 
-const DIRS: Array[String] = ["rider", "bike", "kit", "world1", "world2", "fx"]
-## Alpha-scissor cards (DESIGN 9: trees, grass, bush impostors).
-const CARDS: Array[String] = [
-	"tree_pine_a", "tree_pine_b", "tree_pine_c", "grass_card", "bush_desert"
+const DIRS: Array[String] = [
+	"rider", "bike", "kit", "world1", "world2", "world3", "world4", "world5", "world6", "fx"
 ]
-## Transparent ground patches with a vertex-alpha edge (mud, sand drift).
-const PATCHES: Array[String] = ["mud_puddle", "sand_drift"]
+## Alpha-scissor cards (DESIGN 9 / 11.0 rule 3: trees, grass, bush and far
+## prop impostors).
+const CARDS: Array[String] = [
+	"tree_pine_a",
+	"tree_pine_b",
+	"tree_pine_c",
+	"grass_card",
+	"bush_desert",
+	"serac_card",
+	"glacier_boulder_card",
+	"basalt_columns_card",
+	"scoria_rock_card",
+	"buttress_tree_card",
+	"tree_jungle_a",
+	"tree_jungle_b",
+	"plant_calathea",
+	"plant_anthurium",
+	"shrub_jungle",
+]
+## Transparent ground patches with a vertex-alpha edge in COLOR_0 (DESIGN
+## 11.0 rule 2): mud, sand drift, ice, snow drift, ash dune, river ford, wet
+## steel plates.
+const PATCHES: Array[String] = [
+	"mud_puddle", "sand_drift", "ice_patch", "snow_drift", "ash_dune", "river_ford", "steel_plate"
+]
+## Glossy patches (roughness from DESIGN 11: ice 0.08, ford 0.05, wet steel 0.14).
+const GLOSS: Dictionary = {
+	"mud_puddle": 0.1, "ice_patch": 0.08, "river_ford": 0.05, "steel_plate": 0.14
+}
+## Emission strength per material (lava glows harder, DESIGN 11.2).
+const EMISSION: Dictionary = {"lava_field": 2.5, "ice_cave": 1.2, "air_ring": 2.5}
+## Moving water (DESIGN 11.3): alpha blend, cull off, drawn after the ground.
+const WATER_FALLS: Array[String] = ["waterfall_water"]
 const RACER_KINDS: Array[String] = ["rider", "bike", "hoverboard"]
 ## Models whose textures are mapped on their second UV set (glTF texCoord 1).
 ## StandardMaterial3D samples UV1, so these meshes get UV2 copied into UV1.
@@ -90,8 +119,19 @@ static func for_name(name: String) -> StandardMaterial3D:
 		# Multiply: the default (add) would add the white colour everywhere.
 		m.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY
 		m.emission_texture = em
-		m.emission_energy_multiplier = 1.5
-	if name in CARDS:
+		m.emission_energy_multiplier = float(EMISSION.get(name, 1.5))
+	if name in WATER_FALLS:
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		m.render_priority = 1
+		m.roughness = 0.1
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+		m.normal_texture = map("water_ripple_normal")
+		m.normal_enabled = m.normal_texture != null and _high
+		m.normal_scale = 0.4
+	elif name == "pool_water":
+		_water_into(m, Color(0.02, 0.035, 0.03), 0.05)
+	elif name in CARDS:
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 		m.alpha_scissor_threshold = 0.5
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -101,13 +141,40 @@ static func for_name(name: String) -> StandardMaterial3D:
 		m.vertex_color_use_as_albedo = true
 		m.render_priority = -1
 		m.cull_mode = BaseMaterial3D.CULL_BACK
-		if name == "mud_puddle":
+		if GLOSS.has(name):
 			m.roughness_texture = null
-			m.roughness = 0.1
+			m.roughness = float(GLOSS[name])
 	elif name == "fern":
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_mats[name] = m
 	return m
+
+
+## Dark glossy water with a slow ripple normal (DESIGN 11.3 / 11.4).
+static func _water_into(m: StandardMaterial3D, col: Color, rough: float) -> void:
+	m.albedo_texture = null
+	m.albedo_color = col
+	m.roughness_texture = null
+	m.roughness = rough
+	m.metallic_texture = null
+	m.metallic = 0.0
+	m.metallic_specular = 0.7
+	m.ao_enabled = false
+	m.normal_texture = map("water_ripple_normal")
+	m.normal_enabled = m.normal_texture != null
+	m.normal_scale = 0.15
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3(0.08, 0.08, 0.08)
+
+
+## Open water for the river, the pool and the harbour basin (one per colour).
+static func water(col: Color, rough: float = 0.06) -> StandardMaterial3D:
+	var key: String = "water#%s" % col.to_html()
+	if not _mats.has(key):
+		var m := StandardMaterial3D.new()
+		_water_into(m, col, rough)
+		_mats[key] = m
+	return _mats[key]
 
 
 ## A racer's material: the shared one with the livery albedo swapped (r1-r6).

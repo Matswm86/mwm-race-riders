@@ -29,6 +29,16 @@ uniform float line_dark = 0.14;
 uniform bool use_normals = true;
 // Far grid: skip the grass patches (normal maps go off via use_normals).
 uniform bool cheap = false;
+// DESIGN 10a: rock faces sampled world-aligned triplanar (strata stay level
+// on every wall angle) with the base layer collecting on the ledges. Høy only.
+uniform bool rock_triplanar = false;
+// DESIGN 11.1: snow-cat corduroy runs along the track (trail UV turned 90 deg).
+uniform bool trail_rot = false;
+// DESIGN 11.1: blue course-dye lines just inside both trail edges.
+uniform bool dye = false;
+uniform vec3 dye_color = vec3(0.12, 0.30, 0.85);
+// DESIGN 11.3 / 11.4: wet trail (roughness multiplier on the trail layer).
+uniform float rough_mult = 1.0;
 
 varying vec3 wpos;
 varying vec4 splat;
@@ -65,8 +75,15 @@ void fragment() {
 		arm.g = mix(arm.g, 0.92, splat.a);
 	}
 	if (splat.r > 0.01) {
-		vec3 ta = texture(trail_alb, uv / trail_tile).rgb;
-		vec3 tr = texture(trail_arm, uv / trail_tile).rgb;
+		vec2 tuv = trail_rot ? vec2(uv.y, -uv.x) : uv;
+		vec3 ta = texture(trail_alb, tuv / trail_tile).rgb;
+		vec3 tr = texture(trail_arm, tuv / trail_tile).rgb;
+		tr.g *= rough_mult;
+		if (dye) {
+			float e = lat.y - abs(lat.x);
+			float band = smoothstep(0.05, 0.12, e) * (1.0 - smoothstep(0.55, 0.62, e));
+			ta = mix(ta, dye_color, 0.6 * band * step(lat.x, 90.0));
+		}
 		float d = abs(lat.x);
 		float line = 0.55 * exp(-pow((d - 1.3) / 0.55, 2.0)) + 0.35 * exp(-pow(d / 0.6, 2.0));
 		line *= step(lat.x, 90.0);
@@ -75,7 +92,7 @@ void fragment() {
 		alb = mix(alb, ta, splat.r);
 		arm = mix(arm, tr, splat.r);
 		if (use_normals) {
-			tn = mix(tn, unpack(texture(trail_nrm, uv / trail_tile).rgb), splat.r);
+			tn = mix(tn, unpack(texture(trail_nrm, tuv / trail_tile).rgb), splat.r);
 		}
 	}
 	alb *= 0.86 + 0.28 * macro;
@@ -83,7 +100,16 @@ void fragment() {
 	vec3 t_w = normalize(vec3(1.0, 0.0, 0.0) - nw * nw.x);
 	vec3 b_w = normalize(cross(nw, t_w));
 	vec3 n_out = normalize(t_w * tn.x + b_w * tn.y + nw * tn.z);
-	if (splat.g > 0.01) {
+	if (splat.g > 0.01 && rock_triplanar) {
+		vec3 bw = pow(abs(nw), vec3(4.0));
+		bw /= (bw.x + bw.y + bw.z);
+		vec3 rx = texture(rock_alb, vec2(wpos.z, -wpos.y) / rock_tile).rgb;
+		vec3 rz = texture(rock_alb, vec2(wpos.x, -wpos.y) / rock_tile).rgb;
+		vec3 ry = texture(base_alb, wpos.xz / base_tile).rgb * base_tint;
+		vec3 ra = (rx * bw.x + rz * bw.z) * rock_tint + ry * bw.y;
+		alb = mix(alb, ra, splat.g);
+		arm.g = mix(arm.g, 0.86, splat.g);
+	} else if (splat.g > 0.01) {
 		bool xside = abs(nw.x) > abs(nw.z);
 		vec2 ruv = xside ? vec2(wpos.z * sign(nw.x), -wpos.y) : vec2(-wpos.x * sign(nw.z), -wpos.y);
 		vec3 ra = texture(rock_alb, ruv / rock_tile).rgb * rock_tint;

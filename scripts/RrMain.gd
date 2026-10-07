@@ -753,15 +753,34 @@ func _handle_events() -> void:
 			"hay":
 				var b: Array = track.blocks[int(data)]
 				if _near(who):
-					sfx.play("hay", 1.0, 0.0 if me else -6.0)
+					var block: String = String(track.kit.get("block", "hay_bale"))
+					var cone: bool = block == "world6/traffic_cone"
+					sfx.play("bonk" if cone else "hay", 1.0, 0.0 if me else -6.0)
 					var hp: Vector3 = track.world_point(float(b[0]), float(b[1]), 0.6)
-					world.fx.flakes(hp, 20, Color(0.847, 0.753, 0.537), 4.0)
+					var bits: Color = Color(0.847, 0.753, 0.537)
+					if block == "world5/branch_pile":
+						bits = Color(0.33, 0.25, 0.16)
+					elif cone:
+						bits = Color(0.95, 0.42, 0.10)
+					world.fx.flakes(hp, 20, bits, 4.0)
+			"ring":
+				# W6 air ring: amber sparks and the pad chime, an octave up.
+				if me:
+					sfx.play("pad", 1.5)
+					hud.pad_hit(3)
+				if _near(who) and not RaceRiders.less_motion:
+					world.fx.flakes(world.rider_pos(who, 0.8), 14, Color(1.0, 0.69, 0.0), 4.0, 0.6)
 			"patch":
 				if _near(who) and not RaceRiders.less_motion:
-					var mud: bool = world_id == 1
+					var r0: RrRider = race.riders[who]
+					var pk: String = track.patch_kind(r0.s, r0.x)
 					var pp: Vector3 = world.rider_pos(who, 0.15)
-					if mud:
+					if pk == "mud":
 						world.fx.flakes(pp, 12, Color(0.22, 0.16, 0.10), 3.0, 0.5)
+					elif pk == "ford":
+						world.fx.flakes(pp, 14, Color(0.80, 0.88, 0.92), 3.5, 0.5)
+					elif pk == "snow":
+						world.fx.flakes(pp, 12, Color(0.95, 0.97, 1.0), 3.0, 0.5)
 					else:
 						world.fx.dust(pp, 6, 0.6, 0.22, Vector2(0.4, 1.0), Vector2(0.6, 1.6))
 				if me:
