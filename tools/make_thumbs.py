@@ -5,7 +5,10 @@ Run the bot first (Xvfb recipe in the studio CLAUDE.md) with CAPTURE_PHASE=thumb
   python3 tools/make_thumbs.py <capture dir>
 Each thumb_<key>.png (1080x1920, HUD hidden) becomes assets/textures/ui/tracks/<key>.jpg:
 a 1080 px square from y 420 (sky, the trail ahead and the rider), scaled to 320 px, with a
-Godot import file set to lossy compression so 32 pictures cost well under 1 MB.
+Godot import file set to lossy compression so 96 pictures cost about 2 MB.
+World pictures (the world discs and the world page): thumb_w<N>_t1.png also becomes
+assets/textures/ui/world_<N>.jpg (512 px) for worlds 3-6; worlds 1 and 2 keep their hand-picked
+frames.
 """
 
 import sys
@@ -66,6 +69,18 @@ def main() -> int:
         if not imp.exists():
             imp.write_text(IMPORT.format(name=name), encoding="utf-8")
         n += 1
+        w_id = int(key[1])
+        if key.endswith("_t1") and w_id >= 3:
+            big = im.crop((0, TOP, w, TOP + w)).resize((512, 512), Image.LANCZOS)
+            big.save(OUT.parent / f"world_{w_id}.jpg", quality=88, optimize=True)
+            wimp = OUT.parent / f"world_{w_id}.jpg.import"
+            if not wimp.exists():
+                wimp.write_text(
+                    IMPORT.format(name=f"../world_{w_id}.jpg")
+                    .replace("ui/tracks/../", "ui/")
+                    .replace("compress/mode=1", "compress/mode=0"),
+                    encoding="utf-8",
+                )
     print(f"wrote {n} thumbnails to {OUT}")
     return 0
 

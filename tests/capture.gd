@@ -17,8 +17,15 @@ extends Node
 ##                     w2_t1, w2_t5: draws, triangles, CPU and GPU ms, Høy and
 ##                     Lav, and each Høy feature off
 ##   look            - W1 and W2 mid-race only, with ACES and AgX (tonemap pick)
-##   thumbs          - world pictures for the card, reveal and world page
-##                     (cropped into assets/textures/ui/world_N.jpg, no HUD)
+##   thumbs          - one picture per track, HUD hidden (tools/make_thumbs.py
+##                     crops them into ui/tracks/<key>.jpg and ui/world_N.jpg)
+##   worlds          - worlds 2-6 mid-race at their set pieces (W2 swap gate,
+##                     tumbleweed, rim highway Høy and Lav; W3 ice cave, W4
+##                     lava rail and vent, W5 split path and waterfall, W6
+##                     container canyon and crane jump), the 6-world page
+##   budget          - draw calls and triangles on all 96 races, Høy and Lav,
+##                     at six points per track (a pack teleported there)
+##   probe           - dev: CAPTURE_PLAN shots (see _phase_probe)
 
 var out_dir: String = OS.get_environment("CAPTURE_DIR")
 var main: RrMain
@@ -48,6 +55,12 @@ func _ready() -> void:
 			await _phase_look()
 		"thumbs":
 			await _phase_thumbs()
+		"probe":
+			await _phase_probe()
+		"worlds":
+			await _phase_worlds()
+		"budget":
+			await _phase_budget()
 		_:
 			await _phase_shots()
 	print("CAPTURE DONE in %.1f s" % ((Time.get_ticks_msec() - t0) / 1000.0))
@@ -322,7 +335,10 @@ func _phase_thumbs() -> void:
 		var at: float = _thumb_at(key)
 		main.start_race(key, "free")
 		await _wait_s(0.3)
-		await _until(func(r: RrRace) -> bool: return r.player.s > at, 900.0, 3.0)
+		# The pack is put just before the spot, then rides into it for 0.8 s.
+		await _teleport(at - 24.0)
+		Engine.time_scale = 1.0
+		await _wait_s(0.8)
 		Engine.time_scale = 0.0
 		main.hud.visible = false
 		main.home.visible = false
@@ -386,6 +402,256 @@ func _phase_cost() -> void:
 			)
 			main.world.debug_show(g, true)
 		Engine.time_scale = 1.0
+
+
+## Worlds 2-6 at their set pieces (README and docs/screenshots).
+func _phase_worlds() -> void:
+	RaceRiders.hover_unlocked = true
+	RaceRiders.seen_first_swap = true
+	# World 2 (refreshes the slice's world-2 pictures).
+	main.start_race("w2_t1", "free")
+	await _wait_s(1.0)
+	await _shot("07_reveal_world2")
+	await _teleport(232.0)
+	await _shot("08_w2_midrace")
+	await _teleport(325.0)
+	Engine.time_scale = 1.0
+	await _until(_weed_visible, 20.0, 1.0)
+	await _freeze_shot("09_w2_tumbleweed")
+	await _teleport(437.0)
+	Engine.time_scale = 1.0
+	await _until(
+		func(r: RrRace) -> bool: return r.player.swap_t > 0.0 and r.t - r.player.swap_t > 0.12,
+		10.0,
+		0.5
+	)
+	await _freeze_shot("10_swap_gate")
+	await _teleport(610.0)
+	await _shot("11_w2_board_highway")
+	main.world.apply_quality(false)
+	await _frames(8)
+	await _shot("12_w2_highway_lav")
+	print("W2 rim highway Lav: draws %d tris %dk" % [_draws(), _tris() / 1000])
+	main.world.apply_quality(true)
+	var plan: Array = [
+		["w3_t1", "sig-18", "16_w3_ice_cave"],
+		["w3_t2", "0.2", "17_w3_glacier"],
+		["w4_t1", "lava+40", "18_w4_lava_rail"],
+		["w4_t3", "sig-22", "19_w4_steam_vent"],
+		["w5_t1", "split+12", "20_w5_split_path"],
+		["w5_t2", "sig-26", "21_w5_waterfall"],
+		["w6_t1", "containers+20", "22_w6_container_canyon"],
+		["w6_t2", "sig-40", "23_w6_crane_jump"],
+		["w6_t3", "0.3", "24_w6_midrace"],
+	]
+	for e: Array in plan:
+		main.start_race(String(e[0]), "free")
+		await _wait_s(0.4)
+		await _teleport(_resolve_s(String(e[0]), String(e[1])))
+		Engine.time_scale = 1.0
+		await _wait_s(0.6)
+		await _freeze_shot(String(e[2]))
+		print(
+			(
+				"%s: %s s %.0f draws %d tris %dk"
+				% [e[2], e[0], main.race.player.s, _draws(), _tris() / 1000]
+			)
+		)
+	main.open_track_page()
+	main.page.world_discs[2].press()
+	await _wait_s(0.5)
+	await _shot("14_world_page")
+
+
+## Draw calls on every race (owner 10-07: Høy <= 80, Lav <= 60, Pro evening
+## included): a pack teleported to six points per track, the worst kept.
+func _phase_budget() -> void:
+	RaceRiders.hover_unlocked = true
+	var only: String = OS.get_environment("BUDGET_ONLY")
+	var rows: Array = []
+	for key: String in RrTracks.all_keys(true):
+		if only != "" and not key.begins_with(only):
+			continue
+		main.start_race(key, "free")
+		await _wait_s(0.2)
+		var trk: RrTrack = main.track
+		var pts: Array[float] = [0.04, 0.2, 0.38, 0.56, 0.74]
+		var ss: Array[float] = []
+		for f: float in pts:
+			ss.append(trk.length * f)
+		ss.append(trk.zone_at("lip", trk.kickers[trk.kickers.size() - 2]) - 25.0)
+		var worst: Array = [0, 0, 0, 0, 0.0, 0.0]
+		for at: float in ss:
+			await _teleport(at)
+			for high: bool in [true, false]:
+				main.world.apply_quality(high)
+				main.world.call("_update_casters", main.race, 1.0)
+				await _frames(5)
+				var d: int = _draws()
+				var t: int = _tris()
+				var i: int = 0 if high else 2
+				if d > int(worst[i]):
+					worst[i] = d
+					worst[4 + i / 2] = at
+				worst[i + 1] = maxi(int(worst[i + 1]), t)
+		main.world.apply_quality(true)
+		Engine.time_scale = 1.0
+		rows.append([key] + worst)
+		print(
+			(
+				"BUDGET %-7s hoy %3d draws (s %4.0f) %4dk tris | lav %3d draws (s %4.0f) %4dk tris"
+				% [
+					key,
+					worst[0],
+					worst[4],
+					int(worst[1]) / 1000,
+					worst[2],
+					worst[5],
+					int(worst[3]) / 1000
+				]
+			)
+		)
+	var hi: int = 0
+	var lo: int = 0
+	for r: Array in rows:
+		hi = maxi(hi, int(r[1]))
+		lo = maxi(lo, int(r[3]))
+	print("BUDGET worst over %d races: Høy %d, Lav %d (limits 80 / 60)" % [rows.size(), hi, lo])
+
+
+## Dev probe: CAPTURE_PLAN="w3_t1@sig-20,w4_t2@0.4" (s in metres, a share of
+## the length, or a zone name +- metres); one Høy and one Lav shot each with
+## draws and triangles.
+func _phase_probe() -> void:
+	RaceRiders.hover_unlocked = true
+	for item: String in OS.get_environment("CAPTURE_PLAN").split(",", false):
+		var key: String = item.get_slice("@", 0)
+		main.start_race(key, "free")
+		await _wait_s(0.3)
+		var at: float = _resolve_s(key, item.get_slice("@", 1))
+		await _teleport(at)
+		for high: bool in [true, false]:
+			main.world.apply_quality(high)
+			main.world.call("_update_casters", main.race, 1.0)
+			await _frames(8)
+			var tag: String = "%s_%s_%d" % [key, "hoy" if high else "lav", int(at)]
+			await _shot("probe_" + tag)
+			print("PROBE %s draws %d tris %dk" % [tag, _draws(), _tris() / 1000])
+			if OS.get_environment("PROBE_BREAKDOWN") != "":
+				await _breakdown(tag)
+		main.world.apply_quality(true)
+		Engine.time_scale = 1.0
+
+
+## Draw calls per scene group at this frame: hide the group, measure the drop.
+func _breakdown(tag: String) -> void:
+	var w: RrWorld = main.world
+	var groups: Dictionary = {"hud": [main.hud, main.home, main.gear], "fx": [w.fx]}
+	var racers: Array = []
+	for v: RrRiderView in w.views:
+		racers.append(v)
+	groups["racers"] = racers
+	var stat: Node = w.get_node("Static")
+	for c: Node in stat.get_children():
+		var g: String = "static_other"
+		if c is MultiMeshInstance3D:
+			var mmi := c as MultiMeshInstance3D
+			g = "prop:" + mmi.multimesh.mesh.resource_name if mmi.multimesh.mesh != null else "prop"
+			for e: Array in w.get("_veg"):
+				if e[1] == c:
+					g = "prop:" + RrWorld.model_of(String(e[0]))
+		elif c is MeshInstance3D:
+			var mo: Material = (c as MeshInstance3D).material_override
+			g = "ground" if mo is ShaderMaterial else "water"
+			if (
+				mo is ShaderMaterial
+				and (mo as ShaderMaterial).shader.resource_path.contains("lane")
+			):
+				g = "lane"
+		if not groups.has(g):
+			groups[g] = []
+		(groups[g] as Array).append(c)
+	var kit: Array = []
+	for c2: Node in w.get_children():
+		if c2 is GeometryInstance3D and not c2 is RrRiderView:
+			kit.append(c2)
+	groups["kit"] = kit
+	var base: int = _draws()
+	var rows: Array = []
+	for g2: String in groups:
+		var was: Array = []
+		for n: Node in groups[g2]:
+			was.append(n.get("visible"))
+			n.set("visible", false)
+		await _frames(3)
+		rows.append([base - _draws(), g2])
+		for i: int in groups[g2].size():
+			(groups[g2][i] as Node).set("visible", was[i])
+	rows.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]))
+	var line: PackedStringArray = []
+	for r: Array in rows:
+		if int(r[0]) != 0:
+			line.append("%s %d" % [r[1], r[0]])
+	print("BREAKDOWN %s total %d: %s" % [tag, base, ", ".join(line)])
+	await _frames(3)
+
+
+## s for a probe spec: "123" metres, "0.4" share of the length, "sig-20"
+## the signature lip minus 20 m, "split+10", "lava", "seracs" ... zone starts.
+func _resolve_s(_key: String, spec: String) -> float:
+	var trk: RrTrack = main.track
+	var off: float = 0.0
+	var name: String = spec
+	for sep: String in ["+", "-"]:
+		if spec.contains(sep) and not spec.begins_with(sep):
+			name = spec.get_slice(sep, 0)
+			off = float(spec.get_slice(sep, 1)) * (1.0 if sep == "+" else -1.0)
+	if name.is_valid_float():
+		var v: float = float(name)
+		return (v * trk.length if v <= 1.0 else v) + off
+	if name == "sig":
+		return trk.zone_at("lip", trk.kickers[trk.kickers.size() - 2]) + off
+	if name == "tunnel":
+		return trk.tunnel.x + off
+	var z: Vector2 = trk.zone(name)
+	return (z.x if z.x >= 0.0 else trk.length * 0.5) + off
+
+
+## Put the whole pack at s (rivals just ahead), cursors past s, camera behind.
+func _teleport(at: float) -> void:
+	Engine.time_scale = 0.0
+	var race: RrRace = main.race
+	if race.phase == RrRace.Phase.PRE:
+		race.start_lights()
+	race.phase = RrRace.Phase.RACE
+	race.t = maxf(race.t, 5.0)
+	var offs: Array[float] = [0.0, 6.0, 9.0, 14.0, 22.0, 30.0]
+	for i: int in race.riders.size():
+		var r: RrRider = race.riders[i]
+		r.s = at + offs[i]
+		r.x = race.track.kid_x(r.s) + (0.0 if i == 0 else RrBalance.AI_LANE_OFFSETS[i - 1] * 0.6)
+		r.v = RrBalance.CRUISE_MPS
+		r.reached_floor = true
+		r.airborne = false
+		r.h = 0.0
+		r.next_pad = race.track.pads.filter(func(p: Array) -> bool: return float(p[0]) < r.s).size()
+		r.next_kick = race.track.kickers.filter(func(k: float) -> bool: return k < r.s).size()
+		r.next_hay = (
+			race.track.blocks.filter(func(b: Array) -> bool: return float(b[0]) < r.s).size()
+		)
+		r.next_gate = (
+			race.track.gates.filter(func(g: Array) -> bool: return float(g[0]) < r.s).size()
+		)
+		r.next_hop = race.track.hops.filter(func(h: float) -> bool: return h < r.s).size()
+		r.next_ring = (
+			race.track.rings.filter(func(g: Array) -> bool: return float(g[0]) < r.s).size()
+		)
+		r.vehicle = RrRider.BOARD if race.track.is_smooth(r.s) else RrRider.BIKE
+	main.world.reset_camera(race)
+	main.world.skip_intro()
+	# Shadow casters and rider detail follow the pack the way they do in a race.
+	main.world.call("_update_casters", race, 1.0)
+	await _frames(4)
 
 
 func _feat(all: Array[String], off: String) -> Dictionary:
