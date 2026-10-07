@@ -1,3 +1,4 @@
+# gdlint: disable=max-file-lines
 class_name RrWorld
 extends Node3D
 
@@ -8,6 +9,136 @@ extends Node3D
 ## RrWorld per race: switching worlds builds a new one.
 
 const GHOST_TINT := Color(0.86, 0.94, 1.0)
+## Ground layers per world (DESIGN 9, 10, 11.1-11.4): texture set names under
+## assets/textures/world<N>/ and the shader tiles and knobs.
+const TERRAIN: Dictionary = {
+	3:
+	{
+		"trail": "terrain_snow_groomed",
+		"base": "terrain_snow",
+		"rock": "terrain_glacier_rock",
+		"verge": "terrain_snow_wind",
+		"patch": "terrain_snow_wind",
+		"tiles": [3.0, 4.0, 8.0, 5.0, 9.0],
+		"dye": true,
+		"line_dark": 0.06,
+	},
+	4:
+	{
+		"trail": "terrain_ash_trail",
+		"base": "terrain_ash",
+		"rock": "terrain_basalt",
+		"verge": "terrain_ash_soft",
+		"patch": "terrain_lava_crust",
+		"tiles": [3.2, 4.0, 7.0, 5.0, 6.0],
+	},
+	5:
+	{
+		"trail": "terrain_mud_wet",
+		"base": "terrain_forest_moss",
+		"rock": "terrain_mossy_rock",
+		"verge": "terrain_mud_leaves",
+		"patch": "terrain_mud_leaves",
+		"tiles": [3.0, 4.0, 6.0, 3.5, 3.5],
+		"rough": 0.55,
+	},
+	6:
+	{
+		"trail": "terrain_asphalt_wet",
+		"base": "terrain_quay_concrete",
+		"rock": "terrain_quay_wall",
+		"verge": "terrain_quay_concrete",
+		"patch": "terrain_steel_plate",
+		"tiles": [4.0, 5.0, 4.0, 5.0, 3.0],
+		"rough": 0.45,
+		"line_dark": 0.05,
+	},
+}
+## Smooth (hoverboard) lane surface per world: [texture set, tile, tint, edge lines].
+const LANES: Dictionary = {
+	3: ["res://assets/textures/world3/terrain_blue_ice", 4.0, Vector3(0.92, 0.95, 1.0), 0.0],
+	4: ["res://assets/textures/world4/terrain_basalt", 6.0, Vector3(0.78, 0.74, 0.72), 0.0],
+	5:
+	["res://assets/textures/world1/terrain_gravel_floor_02", 2.5, Vector3(0.42, 0.44, 0.36), 0.0],
+	6: ["res://assets/textures/world6/terrain_quay_concrete", 5.0, Vector3(0.75, 0.75, 0.75), 1.0],
+}
+## Far versions of near props (DESIGN 11.0 rule 3): model -> [card, swap m].
+const LODS: Dictionary = {
+	"world3/serac_a": ["world3/serac_card", 60.0],
+	"world3/serac_b": ["world3/serac_card", 60.0],
+	"world3/glacier_boulder": ["world3/glacier_boulder_card", 60.0],
+	"world4/basalt_columns": ["world4/basalt_columns_card", 80.0],
+	"world4/scoria_rock": ["world4/scoria_rock_card", 60.0],
+	"world5/buttress_tree": ["world5/buttress_tree_card", 70.0],
+	"world6/container": ["world6/container_far", 40.0],
+}
+## Props that cast the sun's shadow on Høy (near ones only: the shadow
+## distance is 40 m).
+const CASTERS: Array[String] = [
+	"world1/cabin",
+	"world1/river_bridge",
+	"world1/rock_tunnel_portal",
+	"world2/sandstone_arch",
+	"world2/gas_station",
+	"world2/canyon_cliff_a",
+	"world2/canyon_cliff_b",
+	"world3/ice_cave",
+	"world3/glacier_hut",
+	"world3/serac_a",
+	"world3/serac_b",
+	"world4/research_station",
+	"world4/safety_rail",
+	"world4/basalt_columns",
+	"world5/rope_bridge",
+	"world5/stone_ruin",
+	"world5/buttress_tree",
+	"world6/crane_jump_stack",
+	"world6/gantry_crane",
+	"world6/container",
+]
+## Patch model -> [native x (across), native z (along), turned 90 deg, pad x, pad z].
+const PATCH_FIT: Dictionary = {
+	"mud_puddle": [5.6, 11.2, false, 1.35, 1.3],
+	"sand_drift": [15.0, 4.0, true, 1.3, 1.25],
+	"world3/ice_patch": [6.0, 14.0, false, 1.25, 1.2],
+	"world3/snow_drift": [15.0, 4.0, true, 1.3, 1.25],
+	"world4/ash_dune": [15.0, 4.5, true, 1.3, 1.25],
+	"world5/river_ford": [12.0, 18.0, false, 1.08, 1.1],
+	"world6/steel_plate": [7.2, 6.9, false, 1.15, 1.15],
+}
+## Visibility (m) of scatter props of worlds 3-6: model -> [Høy, Lav].
+const VIS: Dictionary = {
+	"world3/flag_pole": [160.0, 110.0],
+	"world4/burnt_snag": [150.0, 100.0],
+	"world5/shrub_jungle": [35.0, 15.0],
+	"world5/plant_calathea": [35.0, 15.0],
+	"world6/concrete_barrier": [120.0, 80.0],
+	"world6/bollard": [120.0, 70.0],
+	"world6/sodium_lamp": [420.0, 260.0],
+	"fxq_light_pool": [200.0, 80.0],
+	"fxb_sodium_glow": [600.0, 250.0],
+	"world6/sea_marker": [600.0, 200.0],
+	"rock_b": [160.0, 110.0],
+}
+## Far end of the cards that replace near props: model -> [Høy, Lav].
+const CARD_END: Dictionary = {
+	"world3/serac_a": [420.0, 260.0],
+	"world3/serac_b": [420.0, 260.0],
+	"world3/glacier_boulder": [200.0, 120.0],
+	"world4/basalt_columns": [420.0, 260.0],
+	"world4/scoria_rock": [180.0, 110.0],
+	"world5/buttress_tree": [500.0, 300.0],
+	"world6/container": [420.0, 260.0],
+}
+## Roller model -> [centre height, bounces].
+const ROLLER_FIT: Dictionary = {
+	"tumbleweed": [0.6, true],
+	"world3/snow_slough": [0.65, true],
+	"world4/falling_rock_a": [0.25, false],
+	"world6/cable_spool": [0.8, false],
+}
+
+static var _glb_cache: Dictionary = {}
 
 var track: RrTrack
 var look: Dictionary = {}
@@ -49,6 +180,16 @@ var _casters: Array[GeometryInstance3D] = []
 var _static_root: Node3D
 var _near_trees: Array[MultiMeshInstance3D] = []
 var _cast_t: float = 0.0
+## Hop hindrances (W4 crust ridges, W5 logs) and W6 air rings.
+var _hops: MultiMeshInstance3D
+var _rings: MultiMeshInstance3D
+## W5 waterfall material (its v scrolls), W6 lamp heads and the two omni
+## lights that follow the nearest ones.
+var _falls: Array[StandardMaterial3D] = []
+var _lamp_heads: PackedVector3Array = PackedVector3Array()
+var _omnis: Array[OmniLight3D] = []
+var _vent_prev: bool = false
+var _ambient: float = 1.0
 
 # Camera state
 var _cam_mode: String = "chase"
@@ -66,6 +207,7 @@ var _boost_blend: float = 0.0
 var _intro_from: Transform3D
 var _finish_from: Transform3D
 var _rng := RandomNumberGenerator.new()
+var _col_mats: Dictionary = {}
 
 
 func _ready() -> void:
@@ -74,7 +216,7 @@ func _ready() -> void:
 	camera.fov = RrBalance.CAM_FOV
 	camera.keep_aspect = Camera3D.KEEP_HEIGHT
 	camera.near = 0.3
-	camera.far = RrBalance.CAM_FAR
+	camera.far = RrBalance.CAM_FAR  # raised per world in setup (look "far")
 	camera.current = true
 	add_child(camera)
 
@@ -82,6 +224,7 @@ func _ready() -> void:
 func setup(trk: RrTrack) -> void:
 	track = trk
 	look = trk.look
+	camera.far = float(look.get("far", RrBalance.CAM_FAR))
 	var path := Path3D.new()
 	path.name = "CentreLine"
 	path.curve = track.make_curve()
@@ -111,11 +254,15 @@ func _build_environment() -> void:
 	env.sky_rotation = Vector3(0.0, deg_to_rad(float(look["sky_yaw"])), 0.0)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 1.0
+	if look.has("ambient"):
+		# W6 night: a little blue-grey fill so the quay is never pure black.
+		env.ambient_light_color = look["ambient"]
+		env.ambient_light_sky_contribution = 0.35
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# AgX: matches the approved Blender AgX mocks better than ACES (side by
 	# side on the real build: ACES pushed the pine-needle verge to orange).
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 1.0
+	env.tonemap_exposure = float(look.get("exposure", 1.0))
 	env.tonemap_white = 6.0
 	env.ssao_enabled = false
 	env.fog_enabled = true
@@ -145,6 +292,7 @@ func _build_environment() -> void:
 	sun.shadow_enabled = true
 	sun.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
 	add_child(sun)
+	_ambient = env.ambient_light_energy
 
 
 ## Terrain material per world (DESIGN 9 / 10 layer tables).
@@ -154,11 +302,25 @@ func _terrain_material() -> ShaderMaterial:
 	var w: int = track.world_id
 	var d: String = "res://assets/textures/world%d/" % w
 	var layers: Dictionary
-	if w == 2:
+	if TERRAIN.has(w):
+		layers = TERRAIN[w]
+		var tl: Array = layers["tiles"]
+		m.set_shader_parameter("trail_tile", tl[0])
+		m.set_shader_parameter("base_tile", tl[1])
+		m.set_shader_parameter("rock_tile", tl[2])
+		m.set_shader_parameter("verge_tile", tl[3])
+		m.set_shader_parameter("patch_tile", tl[4])
+		m.set_shader_parameter("trail_rot", bool(layers.get("trail_rot", false)))
+		m.set_shader_parameter("dye", bool(layers.get("dye", false)))
+		m.set_shader_parameter("rough_mult", float(layers.get("rough", 1.0)))
+		m.set_shader_parameter("line_dark", float(layers.get("line_dark", 0.14)))
+	elif w == 2:
+		# DESIGN 10a: the canyon-wall set (level strata) replaces cliff_side;
+		# Høy samples it world-aligned triplanar (apply_features).
 		layers = {
 			"trail": "terrain_red_laterite_soil_stones",
 			"base": "terrain_red_sand",
-			"rock": "terrain_cliff_side",
+			"rock": "terrain_canyon_wall",
 			"verge": "terrain_red_sand",
 			"patch": "terrain_red_sand",
 		}
@@ -193,7 +355,13 @@ func _lane_material() -> ShaderMaterial:
 	m.shader = load("res://shaders/rr_lane.gdshader")
 	var w: int = track.world_id
 	var base: String
-	if w == 2:
+	if LANES.has(w):
+		var ln: Array = LANES[w]
+		base = ln[0]
+		m.set_shader_parameter("tile", ln[1])
+		m.set_shader_parameter("tint", ln[2])
+		m.set_shader_parameter("edge_line", ln[3])
+	elif w == 2:
 		base = "res://assets/textures/world2/terrain_worn_asphalt"
 		m.set_shader_parameter("tile", 4.0)
 		m.set_shader_parameter("edge_line", 1.0)
@@ -246,40 +414,30 @@ func _build_static() -> void:
 		ml.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		ml.visibility_range_end = 420.0
 		_static_root.add_child(ml)
+	var wm: StandardMaterial3D = _water_material()
 	for e: Array in data["water"]:
 		var mw := MeshInstance3D.new()
 		mw.mesh = e[0]
-		var wm := StandardMaterial3D.new()
-		wm.albedo_color = Color(0.05, 0.08, 0.07)
-		wm.roughness = 0.06
-		wm.metallic_specular = 0.7
-		wm.normal_enabled = true
-		wm.normal_texture = load("res://assets/textures/world1/terrain_gravel_floor_02_normal.jpg")
-		wm.normal_scale = 0.15
-		wm.uv1_triplanar = true
-		wm.uv1_scale = Vector3(0.08, 0.08, 0.08)
 		mw.material_override = wm
 		mw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_static_root.add_child(mw)
 	var protos: Dictionary = {}
 	for e: Array in data["props"]:
 		var kind: String = e[0]
-		var model: String = (
-			kind.trim_prefix("st_").trim_prefix("near_").trim_prefix("far_").trim_prefix("srock_")
-		)
+		var model: String = RrWorld.model_of(kind)
 		if not protos.has(model):
-			protos[model] = glb_mesh(model)
+			protos[model] = _proto(model)
 		var buf: PackedFloat32Array = e[1]
+		var colored: bool = kind.contains("col_")
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = colored
 		mm.mesh = protos[model]
-		mm.instance_count = buf.size() / 12
+		mm.instance_count = buf.size() / (16 if colored else 12)
 		mm.buffer = buf
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
-		var mat: Material = RrMats.for_mesh(mm.mesh)
-		if kind.begins_with("srock_") or kind.begins_with("st_srock_"):
-			mat = sandstone(mat as StandardMaterial3D)
+		var mat: Material = _prop_material(kind, model, mm.mesh)
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mmi.visibility_range_end_margin = 10.0
@@ -300,12 +458,113 @@ func _build_static() -> void:
 			cmi.multimesh = cm
 			cmi.material_override = mat
 			cmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			cmi.visibility_range_begin = 45.0
+			cmi.visibility_range_begin = 75.0
 			_static_root.add_child(cmi)
 			_veg.append(["card_" + kind, cmi])
+		elif kind.begins_with("st_"):
+			pass  # roadside stones and plants: too small to need a sun shadow
 		elif model.begins_with("rock") or model in ["dead_trunk", "fence_rail"]:
 			_casters.append(mmi)
+		elif model in CASTERS:
+			_casters.append(mmi)
+		if kind.begins_with("lod_") and LODS.has(model):
+			# Near mesh up to the swap distance, its card beyond (same buffer).
+			var lod: Array = LODS[model]
+			var card: String = lod[0]
+			if not protos.has(card):
+				protos[card] = glb_mesh(card)
+			var fm := MultiMesh.new()
+			fm.transform_format = MultiMesh.TRANSFORM_3D
+			fm.use_colors = colored
+			fm.mesh = protos[card]
+			fm.instance_count = mm.instance_count
+			fm.buffer = buf
+			var fmi := MultiMeshInstance3D.new()
+			fmi.multimesh = fm
+			fmi.material_override = _prop_material(kind, card, fm.mesh)
+			fmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			fmi.visibility_range_begin = float(lod[1])
+			_static_root.add_child(fmi)
+			_veg.append(["card_lod_" + model, fmi])
+		if model == "world6/sodium_lamp":
+			for i: int in mm.instance_count:
+				var lx: Transform3D = _static_root.transform * mm.get_instance_transform(i)
+				_lamp_heads.append(lx.origin + Vector3.UP * 11.0)
 	world_ms = Time.get_ticks_msec() - t0
+
+
+## Model name of a prop kind (prefixes: st_ streamer, near_ / far_ trees,
+## srock_ sandstone-tinted rock, lm_ landmark, lod_ near/far pair, col_
+## coloured per instance, fxq_ / fxb_ light quads).
+static func model_of(kind: String) -> String:
+	var m: String = kind
+	for pre: String in ["st_", "lm_", "lod_", "col_", "near_", "far_", "srock_"]:
+		m = m.trim_prefix(pre)
+	return m
+
+
+## Mesh for a model: a GLB, or a quad for the W6 light fx.
+func _proto(model: String) -> Mesh:
+	if model == "fxq_light_pool":
+		var q := QuadMesh.new()
+		q.orientation = PlaneMesh.FACE_Y
+		q.size = Vector2(1.0, 1.0)
+		return q
+	if model == "fxb_sodium_glow":
+		var b := QuadMesh.new()
+		b.size = Vector2(1.0, 1.0)
+		return b
+	return glb_mesh(model)
+
+
+func _prop_material(kind: String, model: String, mesh: Mesh) -> Material:
+	if model == "fxq_light_pool" or model == "fxb_sodium_glow":
+		var fm := StandardMaterial3D.new()
+		fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		fm.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+		fm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		var pool: bool = model == "fxq_light_pool"
+		fm.albedo_texture = load(
+			"res://assets/textures/world6/%s.png" % ("fx_light_pool" if pool else "fx_sodium_glow")
+		)
+		fm.albedo_color = Color(1.0, 0.62, 0.30, 0.22 if pool else 0.9)
+		if not pool:
+			fm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		return fm
+	var mat: StandardMaterial3D = RrMats.for_mesh(mesh)
+	if kind.begins_with("srock_") or kind.begins_with("st_srock_"):
+		mat = sandstone(mat)
+	if kind.contains("col_"):
+		var key: String = mat.resource_name + "#col"
+		if not _col_mats.has(key):
+			var cm: StandardMaterial3D = mat.duplicate()
+			cm.vertex_color_use_as_albedo = true
+			_col_mats[key] = cm
+		mat = _col_mats[key]
+	if model in RrMats.WATER_FALLS and not mat in _falls:
+		_falls.append(mat)
+	return mat
+
+
+## Open water per world (W1 river; W5 river and pool; W6 harbour basin).
+func _water_material() -> StandardMaterial3D:
+	match track.world_id:
+		5:
+			return RrMats.water(Color(0.03, 0.05, 0.045), 0.05)
+		6:
+			return RrMats.water(Color(0.006, 0.010, 0.014), 0.06)
+	var wm := StandardMaterial3D.new()
+	wm.albedo_color = Color(0.05, 0.08, 0.07)
+	wm.roughness = 0.06
+	wm.metallic_specular = 0.7
+	wm.normal_enabled = true
+	wm.normal_texture = load("res://assets/textures/world1/terrain_gravel_floor_02_normal.jpg")
+	wm.normal_scale = 0.15
+	wm.uv1_triplanar = true
+	wm.uv1_scale = Vector3(0.08, 0.08, 0.08)
+	return wm
 
 
 ## The first plane (two triangles) of a four-plane pine impostor.
@@ -327,10 +586,13 @@ static func sandstone(base: StandardMaterial3D) -> StandardMaterial3D:
 
 
 static func glb_mesh(name: String) -> Mesh:
+	if _glb_cache.has(name):
+		return _glb_cache[name]
 	var root: Node = (load("res://assets/models/%s.glb" % name) as PackedScene).instantiate()
 	var mi: MeshInstance3D = root.find_children("*", "MeshInstance3D", true, false)[0]
 	var m: Mesh = RrMats.uv_fixed(mi.mesh)
 	root.free()
+	_glb_cache[name] = m
 	return m
 
 
@@ -406,6 +668,8 @@ func _build_kit() -> void:
 	var by_model: Dictionary = {}
 	for i: int in track.kickers.size():
 		var model: String = track.kicker_models[i]
+		if model.begins_with("-") or model == "vent" or model == "world1/river_bridge":
+			continue  # the skin is a landmark (RrLandmarks): stack, vent, bridge
 		var mesh: Mesh = glb_mesh(model)
 		var sc: float = mesh.get_aabb().size.x
 		var sm: float = track.kickers[i] - RrBalance.KICKER_LEN_M * 0.5
@@ -417,33 +681,47 @@ func _build_kit() -> void:
 	for model: String in by_model:
 		var e: Array = by_model[model]
 		var mesh2: Mesh = e[0]
-		var ramps: MultiMeshInstance3D = multi(self, mesh2, e[1], RrMats.for_mesh(mesh2))
+		var rmat: StandardMaterial3D = RrMats.for_mesh(mesh2)
+		if model == "ramp_rock" and track.world_id == 4:
+			rmat = _tinted(rmat, Color(0.35, 0.33, 0.32))  # DESIGN 11.2: basalt
+		elif model == "ramp_rock" and track.world_id == 5:
+			rmat = _tinted(rmat, Color(0.55, 0.62, 0.45))  # moss on the waterfall lip
+		var ramps: MultiMeshInstance3D = multi(self, mesh2, e[1], rmat)
 		_casters.append(ramps)
-	# Hay bales (W1 Block): one MultiMesh, a burst bale is scaled to zero.
+	# Blocks (W1 hay, W5 branch piles, W6 cones): one MultiMesh, a burst one
+	# is scaled to zero. Cones stand in threes across the 1.6 m block.
+	var block_model: String = String(track.kit.get("block", ""))
+	if block_model == "":
+		block_model = "hay_bale"
 	if not track.blocks.is_empty():
 		_hay_xf.clear()
 		for b: Array in track.blocks:
 			_hay_xf.append(_flat(float(b[0]), float(b[1]), 0.0))
-		var hm: Mesh = glb_mesh("hay_bale")
+		var hm: Mesh = glb_mesh(block_model)
+		if block_model == "world6/traffic_cone":
+			hm = RrWorld._triple(hm, 0.55)
 		_hay = multi(self, hm, _hay_xf, RrMats.for_mesh(hm))
 		_casters.append(_hay)
-	# Patches: mud puddles (W1), sand drifts (W2), stretched to the patch rect.
+	# Patches stretched to their rectangles (model per kind, RrWorlds).
 	var patch_xf: Dictionary = {}
 	for p: Array in track.patches:
 		var kind: String = p[4]
-		var model3: String = "mud_puddle" if kind == "mud" else "sand_drift"
+		var model3: String = String(RrWorlds.PATCH_MODELS.get(kind, "mud_puddle"))
+		var fit: Array = PATCH_FIT.get(model3, PATCH_FIT["mud_puddle"])
 		var s0: float = p[0]
 		var s1: float = p[1]
 		var x0: float = p[2]
 		var x1: float = p[3]
 		var xf3: Transform3D = _slope_frame((s0 + s1) * 0.5, (x0 + x1) * 0.5, 0.01)
-		if model3 == "mud_puddle":
-			xf3.basis = xf3.basis.scaled(
-				Vector3((x1 - x0) * 1.35 / 5.6, 1.0, (s1 - s0) * 1.3 / 11.2)
+		var across: float = (x1 - x0) * float(fit[3])
+		var along: float = (s1 - s0) * float(fit[4])
+		if bool(fit[2]):
+			xf3.basis = (xf3.basis * Basis(Vector3.UP, PI * 0.5)).scaled(
+				Vector3(along / float(fit[0]), 1.0, across / float(fit[1]))
 			)
 		else:
-			xf3.basis = (xf3.basis * Basis(Vector3.UP, PI * 0.5)).scaled(
-				Vector3((s1 - s0) * 1.25 / 15.0, 1.0, (x1 - x0) * 1.3 / 4.0)
+			xf3.basis = xf3.basis.scaled(
+				Vector3(across / float(fit[0]), 1.0, along / float(fit[1]))
 			)
 		if not patch_xf.has(model3):
 			patch_xf[model3] = [] as Array[Transform3D]
@@ -451,15 +729,50 @@ func _build_kit() -> void:
 	for model4: String in patch_xf:
 		var pm: Mesh = glb_mesh(model4)
 		multi(self, pm, patch_xf[model4], RrMats.for_mesh(pm))
-	# Tumbleweeds (W2 Roller): one MultiMesh, posed every frame.
+	# Rollers (W2 tumbleweeds, W3 slough, W4 rocks, W6 spools): posed per frame.
 	if not track.rollers.is_empty():
 		var hidden: Array[Transform3D] = []
 		for i: int in track.rollers.size():
 			hidden.append(Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
-		var tw: Mesh = glb_mesh("tumbleweed")
+		var rmodel: String = String(track.kit.get("roller", "tumbleweed"))
+		if rmodel == "":
+			rmodel = "tumbleweed"
+		var tw: Mesh = glb_mesh(rmodel)
 		_weeds = multi(self, tw, hidden, RrMats.for_mesh(tw))
 		_weeds.custom_aabb = AABB(Vector3(-5000, -2000, -5000), Vector3(10000, 4000, 10000))
+		_weeds.set_meta(&"fit", ROLLER_FIT.get(rmodel, [0.6, true]))
 		_casters.append(_weeds)
+	# Hops (W4 lava-crust ridges, W5 logs) lie across the whole width.
+	var hop_model: String = String(track.kit.get("hop", ""))
+	if not track.hops.is_empty() and hop_model != "":
+		var hop_xf: Array[Transform3D] = []
+		for hs: float in track.hops:
+			var hx: Transform3D = _slope_frame(hs, 0.0, 0.0)
+			hx.basis = hx.basis.scaled(Vector3((track.width(hs) + 0.6) / 11.0, 1.0, 1.0))
+			hop_xf.append(hx)
+		var hmesh: Mesh = glb_mesh(hop_model)
+		_hops = multi(self, hmesh, hop_xf, RrMats.for_mesh(hmesh))
+		_casters.append(_hops)
+	# W6 air rings over the jumps, hanging on their cables.
+	if not track.rings.is_empty():
+		var ring_xf: Array[Transform3D] = []
+		for rg: Array in track.rings:
+			var rs: float = rg[0]
+			var rp: Vector3 = track.world_point(rs, float(rg[1]), 0.0)
+			rp.y = track.center(rs).y + float(rg[2]) - 2.7
+			ring_xf.append(Transform3D(Basis(Vector3.UP, track.yaw(rs)), rp))
+		var ringm: Mesh = glb_mesh("world6/air_ring")
+		_rings = multi(self, ringm, ring_xf, RrMats.for_mesh(ringm))
+	if bool(look.get("lamps", false)):
+		# DESIGN 11.4: two warm omni lights follow the lamps nearest the camera.
+		for i: int in 2:
+			var o := OmniLight3D.new()
+			o.light_color = Color(1.0, 0.62, 0.30)
+			o.light_energy = 4.0
+			o.omni_range = 14.0
+			o.shadow_enabled = false
+			add_child(o)
+			_omnis.append(o)
 	# Swap gates: 11.2 m truss arch; LEDs dormant until the hoverboard unlocks.
 	var gm: Mesh = glb_mesh("swap_gate")
 	for g: int in track.gates.size():
@@ -490,6 +803,22 @@ func _build_kit() -> void:
 			towers[i].origin.y = track.center(s2).y + _ground_lift(s2, x2)
 		var tm: Mesh = glb_mesh("water_tower")
 		_casters.append(multi(self, tm, towers, RrMats.for_mesh(tm)))
+
+
+static func _tinted(base: StandardMaterial3D, c: Color) -> StandardMaterial3D:
+	var m: StandardMaterial3D = base.duplicate()
+	m.albedo_color = c
+	return m
+
+
+## Three copies of a small mesh side by side (a cone cluster for one Block).
+static func _triple(mesh: Mesh, gap: float) -> Mesh:
+	var st := SurfaceTool.new()
+	for k: int in 3:
+		st.append_from(mesh, 0, Transform3D(Basis(), Vector3((float(k) - 1.0) * gap, 0.0, 0.0)))
+	var out: ArrayMesh = st.commit()
+	out.surface_set_material(0, mesh.surface_get_material(0))
+	return out
 
 
 ## Small lift so a landmark beside the track stands on the ground.
@@ -548,7 +877,7 @@ func apply_features(f: Dictionary) -> void:
 	env.glow_intensity = 0.4
 	env.glow_strength = 1.0
 	env.glow_bloom = 0.0
-	env.glow_hdr_threshold = 1.2
+	env.glow_hdr_threshold = float(look.get("glow_threshold", 1.2))
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	for i: int in 7:
 		env.set_glow_level(i, 1.0 if i in [2, 3] else 0.0)
@@ -564,6 +893,9 @@ func apply_features(f: Dictionary) -> void:
 	RrMats.set_quality(normals)
 	for m: ShaderMaterial in [_terrain_mat, _lane_mat, _pad_mat]:
 		m.set_shader_parameter("use_normals", normals)
+	# DESIGN 10a / 11: world-aligned triplanar rock walls (Høy only; W1 keeps
+	# its single-axis rock cut).
+	_terrain_mat.set_shader_parameter("rock_triplanar", normals and track.world_id >= 2)
 	for gm: ShaderMaterial in _gate_mats:
 		gm.set_shader_parameter("use_normals", normals)
 	var far: bool = f.get("veg_far", false)
@@ -571,23 +903,43 @@ func apply_features(f: Dictionary) -> void:
 		var kind: String = e[0]
 		var mmi: MultiMeshInstance3D = e[1]
 		var end: float = 0.0
-		if kind.begins_with("st_"):
+		var model: String = RrWorld.model_of(kind.trim_prefix("card_"))
+		if kind.begins_with("lm_"):
+			end = 0.0
+		elif kind.begins_with("card_lod_"):
+			var lod: Array = LODS.get(model, ["", 60.0])
+			mmi.visibility_range_begin = float(lod[1]) * (1.0 if far else 0.67)
+			end = float(CARD_END.get(model, [300.0, 200.0])[0 if far else 1])
+		elif kind.begins_with("lod_"):
+			var lod2: Array = LODS.get(model, ["", 60.0])
+			end = float(lod2[1]) * (1.0 if far else 0.67) + 4.0
+			mmi.visibility_range_end_margin = 4.0
+		elif VIS.has(model) and not kind.begins_with("st_"):
+			end = float(VIS[model][0 if far else 1])
+			if model == "world5/plant_calathea":
+				mmi.visible = far  # Lav: one undergrowth layer (DESIGN 11.3)
+		elif kind.begins_with("st_"):
 			end = RrBalance.PROP_CULL_M  # GDD 11.1 streamers, both tiers
 		elif kind.begins_with("near_"):
 			# Lav: single cards only (half the tree draws and overdraw).
-			end = 45.0
+			end = 75.0  # chunk centres (80 m chunks)
 			mmi.visibility_range_end_margin = 4.0
 			mmi.visible = far
 		elif kind.begins_with("card_"):
-			end = 80.0 if far else 70.0
-			mmi.visibility_range_begin = 45.0 if far else 0.0
+			end = 110.0 if far else 95.0
+			if track.world_id == 5:
+				end = 200.0 if far else 100.0  # the canopy has no far_ trees
+			mmi.visibility_range_begin = 75.0 if far else 0.0
 		elif kind.begins_with("far_"):
 			end = 260.0 if far else 0.0
 			mmi.visible = far
 		elif kind == "grass_card":
-			end = 30.0 if far else 15.0
+			end = 40.0 if far else 27.0  # 50 m chunks: the own chunk stays on
+		elif kind == "fern" and track.world_id == 5:
+			end = 45.0
+			mmi.visible = far  # DESIGN 12 Lav: ferns off
 		elif kind == "fern":
-			end = 35.0
+			end = 45.0
 			mmi.visible = far
 		elif kind == "tape_stake" or kind == "fence_rail":
 			end = 160.0
@@ -709,6 +1061,45 @@ func sync(race: RrRace, dt: float, ghost_row: Array) -> void:
 	_update_camera(race, dt)
 	fx.tick(race, dt, camera, _cam_yaw)
 	_update_casters(race, dt)
+	_update_world_fx(race, dt)
+
+
+## Per-world touches: the W1 tunnel darkens the sky light (DESIGN 9a), the
+## W5 waterfall flows, the W4 vent puffs, the W6 omni lights follow the
+## nearest lamps.
+func _update_world_fx(race: RrRace, dt: float) -> void:
+	var p: RrRider = race.player
+	if track.tunnel.x >= 0.0 and track.world_id == 1:
+		var want: float = 0.35 if track.in_tunnel(p.s + 4.0) else _ambient
+		env.ambient_light_energy = move_toward(env.ambient_light_energy, want, dt * 2.0)
+	for m: StandardMaterial3D in _falls:
+		m.uv1_offset.y = fposmod(m.uv1_offset.y - 1.6 * dt, 1.0)
+	for i: int in track.kickers.size():
+		if track.kicker_models[i] == "vent":
+			var on: bool = race.vent_puffing(race.t)
+			var lip: float = track.kickers[i]
+			if on and not _vent_prev and absf(lip - p.s) < 160.0:
+				fx.steam(track.world_point(lip, 0.0, 0.6))
+			_vent_prev = on
+	if not _omnis.is_empty() and not _lamp_heads.is_empty():
+		var cam: Vector3 = camera.global_position
+		var fwd: Vector3 = -camera.global_transform.basis.z
+		var best: Array = [[1e9, Vector3.ZERO], [1e9, Vector3.ZERO]]
+		for h: Vector3 in _lamp_heads:
+			var d: Vector3 = h - cam
+			if d.dot(fwd) < -6.0:
+				continue
+			var dd: float = d.length_squared()
+			if dd < float(best[0][0]):
+				best[1] = best[0]
+				best[0] = [dd, h]
+			elif dd < float(best[1][0]):
+				best[1] = [dd, h]
+		for i: int in _omnis.size():
+			_omnis[i].visible = (
+				float(best[i][0]) < 1e8 and (i == 0 or features.get("shadows", false))
+			)
+			_omnis[i].global_position = best[i][1]
 
 
 func _update_hay(race: RrRace) -> void:
@@ -737,11 +1128,13 @@ func _update_rollers(race: RrRace) -> void:
 		var s: float = pose[0]
 		var x: float = pose[1]
 		var spin: float = pose[2]
-		var c: Vector3 = track.world_point(s, x, 0.6)
-		c.y = track.center(s).y + 0.6 + absf(sin(spin * 1.3)) * 0.25
+		var fit: Array = _weeds.get_meta(&"fit", [0.6, true])
+		var ch: float = fit[0]
+		var c: Vector3 = track.world_point(s, x, ch)
+		c.y = track.center(s).y + ch + (absf(sin(spin * 1.3)) * 0.25 if bool(fit[1]) else 0.0)
 		var fwd: Vector3 = RrTrack.forward_flat(track.yaw(s))
 		var b := Basis(fwd, -spin) * Basis(Vector3.UP, track.yaw(s))
-		_weeds.multimesh.set_instance_transform(i, Transform3D(b, c - b * Vector3(0, 0.6, 0)))
+		_weeds.multimesh.set_instance_transform(i, Transform3D(b, c - b * Vector3(0, ch, 0)))
 
 
 func _update_pads(dt: float) -> void:
