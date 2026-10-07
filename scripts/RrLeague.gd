@@ -142,6 +142,14 @@ var top_done: bool = false
 ## Set by the version-2 -> 3 save migration when a Silver winner was mid-way
 ## through a replay season: that season's end promotes to Gold III anyway.
 var owed_promotion: bool = false
+## This season's 5 tracks (owner 2026-10-07: a new track every race, sometimes
+## from another world). Built once per season from rounds_of() by
+## mix_rounds() and saved, so a restart resumes the same season.
+var season_tracks: Array[String] = []
+## MWM Play free part (RrState.locked): the season is always W1 tracks 1-5.
+var free_only: bool = false
+## Last track of the season before: the next season never opens on it.
+var _prev_last: String = ""
 
 
 func _init() -> void:
@@ -163,6 +171,9 @@ func _reset_season() -> void:
 	my_places.clear()
 	round_i = 0
 	last_order.clear()
+	if not season_tracks.is_empty():
+		_prev_last = season_tracks[season_tracks.size() - 1]
+	season_tracks.clear()
 
 
 # ---------------------------------------------------------------- tracks
@@ -201,8 +212,61 @@ static func rounds_of(lg: int, tr: int) -> Array[String]:
 	return out
 
 
+## Worlds a player can race in (the stand-alone build has every world open;
+## the MWM Play free part uses free_only instead).
+static func open_worlds() -> Array[int]:
+	var out: Array[int] = []
+	for w: int in range(1, RrBalance.WORLDS_BUILT + 1):
+		out.append(w)
+	return out
+
+
+## A season's tracks: rounds_of(lg, tr), plus one guest track from another
+## open world when the list has none (never in round 1, so a season opens in
+## its home world), no track twice, and never opening on avoid_first.
+static func mix_rounds(
+	lg: int, tr: int, worlds: Array[int], seed_v: int, avoid_first: String
+) -> Array[String]:
+	var out: Array[String] = RrLeague.rounds_of(lg, tr)
+	var home: int = RrLeague.home_world(lg)
+	var r := RandomNumberGenerator.new()
+	r.seed = seed_v
+	var others: Array[int] = []
+	for w: int in worlds:
+		if w != home:
+			others.append(w)
+	var has_guest: bool = false
+	for k: String in out:
+		has_guest = has_guest or RrTracks.world_of(k) != home
+	if not has_guest and not others.is_empty():
+		var pro: bool = RrTracks.is_pro(out[0])
+		var gw: int = others[r.randi_range(0, others.size() - 1)]
+		var cands: Array[String] = []
+		for k: int in range(1, RrBalance.FREE_TRACKS_W1 + 1):
+			var key: String = RrTracks.key(gw, k, pro)
+			if RrTracks.exists(key) and not key in out:
+				cands.append(key)
+		if not cands.is_empty():
+			out[r.randi_range(1, out.size() - 1)] = cands[r.randi_range(0, cands.size() - 1)]
+	if out[0] == avoid_first and out.size() > 1:
+		var first: String = out[0]
+		out[0] = out[1]
+		out[1] = first
+	return out
+
+
 func rounds() -> Array[String]:
-	return RrLeague.rounds_of(league, tier)
+	if free_only:
+		return RrLeague.rounds_of(0, 0)
+	if season_tracks.size() != RrBalance.ROUNDS_PER_SEASON:
+		season_tracks = RrLeague.mix_rounds(
+			league,
+			tier,
+			RrLeague.open_worlds(),
+			hash([save_seed, league, tier, seasons]),
+			_prev_last
+		)
+	return season_tracks
 
 
 func next_track() -> String:
@@ -540,6 +604,7 @@ func to_dict() -> Dictionary:
 		"save_seed": save_seed,
 		"top_done": top_done,
 		"owed_promotion": owed_promotion,
+		"season_tracks": [] if free_only else rounds(),
 	}
 
 
@@ -571,6 +636,19 @@ func from_dict(d: Dictionary) -> void:
 	save_seed = int(d.get("save_seed", 0))
 	top_done = bool(d.get("top_done", false))
 	owed_promotion = bool(d.get("owed_promotion", false))
+	season_tracks.clear()
+	var stl: Variant = d.get("season_tracks", [])
+	var ok: bool = stl is Array and (stl as Array).size() == RrBalance.ROUNDS_PER_SEASON
+	if ok:
+		for k: Variant in stl:
+			ok = ok and RrTracks.exists(String(k))
+	if ok:
+		for k: Variant in stl:
+			season_tracks.append(String(k))
+	elif round_i > 0:
+		# A save from before the track rotation, mid-season: finish the season
+		# on the tracks it was started with.
+		season_tracks = RrLeague.rounds_of(league, tier)
 
 
 ## Version-2 saves were made when Silver was the last league: a player who

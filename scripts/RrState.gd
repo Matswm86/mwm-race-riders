@@ -91,6 +91,7 @@ func set_full_unlock(on: bool) -> void:
 		league = RrLeague.new()
 		league.from_dict(parked_league)
 		parked_league = {}
+	league.free_only = not on
 	settings_changed.emit()
 
 
@@ -216,6 +217,36 @@ func can_ride(key: String) -> bool:
 	return key in free_ride_tracks() or key == league.next_track()
 
 
+## The card's "next" disc when no league round is waiting on another track
+## (owner 2026-10-07): a different track, mostly in the same world, sometimes
+## in another open world, never the one just ridden.
+func pick_next_free(current: String) -> String:
+	var pro: bool = RrTracks.is_pro(current)
+	var same: Array[String] = []
+	var other: Array[String] = []
+	var any: Array[String] = []
+	for k: String in free_ride_tracks():
+		if k == current:
+			continue
+		any.append(k)
+		if RrTracks.is_pro(k) != pro:
+			continue
+		if RrTracks.world_of(k) == RrTracks.world_of(current):
+			same.append(k)
+		else:
+			other.append(k)
+	var r := RandomNumberGenerator.new()
+	r.randomize()
+	var use: Array[String] = same
+	if same.is_empty() or (not other.is_empty() and r.randf() > RrBalance.NEXT_SAME_WORLD):
+		use = other
+	if use.is_empty():
+		use = any
+	if use.is_empty():
+		return current
+	return use[r.randi_range(0, use.size() - 1)]
+
+
 ## GDD 10.2: every launch goes straight into the next league race.
 func launch_track() -> String:
 	return league.next_track()
@@ -261,9 +292,9 @@ func record_league_round(heat: Array[int], finish: Array[float]) -> Dictionary:
 	return r
 
 
-## Close the season (GDD 17.2 / 17.5). In the locked free part the shell
-## gets free_levels_finished (at most once per app session) instead of a
-## promotion.
+## Close the season (GDD 17.2 / 17.5). In the locked free part the result
+## carries free_card (at most once per app session) instead of a promotion;
+## season_card_closed() then tells the shell.
 func end_season() -> Dictionary:
 	var r: Dictionary = league.end_season(easy, locked())
 	for rw: String in league.rewards:
@@ -272,9 +303,16 @@ func end_season() -> Dictionary:
 	if locked() and not _free_card_sent:
 		_free_card_sent = true
 		r["free_card"] = true
-		free_levels_finished.emit()
 	save_game()
 	return r
+
+
+## The child closed the season card (GDD 9.2): only now the shell gets
+## free_levels_finished, so its card follows the podium instead of covering it.
+func season_card_closed(res: Dictionary) -> void:
+	if bool(res.get("free_card", false)):
+		res["free_card"] = false
+		free_levels_finished.emit()
 
 
 func mark_first_swap_seen() -> void:

@@ -58,6 +58,10 @@ var last_season: Dictionary = {}
 ## Where the board was opened from ("page" or "league").
 var _board_from: String = "league"
 
+## What the result card's "next" disc does: "league", "season" or "free", and
+## the track it shows.
+var _card_next_mode: String = "league"
+var _card_next_key: String = ""
 var _touches: Dictionary = {}
 var _steer_order: Array[int] = []
 var _boost_tap: bool = false
@@ -355,9 +359,12 @@ func _show_season_end() -> void:
 	_apply_settings()
 
 
+## The season card closed: the shell hears about the end of the free part
+## now (GDD 9.2), and the next season's first race starts.
 func _on_season_continue() -> void:
 	sfx.play("click")
-	open_league_screen(false)
+	RaceRiders.season_card_closed(last_season)
+	start_race("", "league")
 
 
 func _on_league_race() -> void:
@@ -401,13 +408,24 @@ func _show_card() -> void:
 	var reveals: Array[String] = []
 	if bool(res["unlocked_hover"]):
 		reveals.append("board")
-	var next_key: String = ""
 	last_round = {}
 	if race_mode == "league":
 		last_round = RaceRiders.record_league_round(heat, heat_times())
-		# After round 5 the disc shows the league cup: it opens the season card.
-		var lg: RrLeague = RaceRiders.league
-		next_key = RrRaceDisc.SEASON if lg.season_over() else lg.next_track()
+	# The card's big centre disc is "next race" (owner 2026-10-07, QA 3): the
+	# next league round when one waits on another track, the season card after
+	# round 5 (league cup), else a free ride on a new track. Never this track.
+	var lg: RrLeague = RaceRiders.league
+	var next_key: String
+	if lg.season_over():
+		next_key = RrRaceDisc.SEASON
+		_card_next_mode = "season"
+	elif lg.next_track() != track_key:
+		next_key = lg.next_track()
+		_card_next_mode = "league"
+	else:
+		next_key = RaceRiders.pick_next_free(track_key)
+		_card_next_mode = "free"
+	_card_next_key = next_key
 	last_result = res.duplicate()
 	last_result["place"] = p.place
 	last_result["time"] = p.finish_time
@@ -449,16 +467,23 @@ func _on_card_replay() -> void:
 	start_race(track_key, "free")
 
 
-## The card's biggest disc after a league round: the league table (or the
-## season card after round 5).
+## The card's biggest disc: straight into the next race on another track (or
+## the season card after round 5). The league table is the home side disc.
 func _on_card_next() -> void:
 	sfx.play("click")
-	open_league_screen(true)
+	match _card_next_mode:
+		"season":
+			_show_season_end()
+		"free":
+			start_race(_card_next_key, "free")
+		_:
+			start_race("", "league")
 
 
 func _on_card_home() -> void:
 	sfx.play("click")
-	open_league_screen(false)
+	# After a league round the rows slide to their new places.
+	open_league_screen(race_mode == "league")
 
 
 func _open_settings() -> void:

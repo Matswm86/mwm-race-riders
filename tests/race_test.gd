@@ -50,6 +50,7 @@ func _ready() -> void:
 	_flash_check()
 	_league_rules()
 	_lock_check()
+	_rotation_rules()
 	_away_check()
 	_migration_check()
 	_migration_v2_check()
@@ -398,7 +399,12 @@ func _league_rules() -> void:
 	for row: Dictionary in lg.table():
 		table.append("%s %d" % ["YOU" if row["me"] else row["name"], row["points"]])
 	print("Bronze III rounds %s, places %s, table %s" % [keys, places, table])
-	_check(keys == RrLeague.rounds_of(0, 0), "Bronze III = world 1 tracks 1-5")
+	_season_shape(keys, 1, "Bronze III")
+	var base3: Array[String] = RrLeague.rounds_of(0, 0)
+	_check(
+		keys.filter(func(k: String) -> bool: return k in base3).size() == 4,
+		"Bronze III = 4 of world 1 tracks 1-5 + 1 guest (%s)" % [keys]
+	)
 	var end: Dictionary = lg.end_season(true, false)
 	print(
 		(
@@ -480,10 +486,8 @@ func _league_rules() -> void:
 		"winning Bronze I promotes to Silver III"
 	)
 	_check("trophy:0" in b1.rewards and "jersey:0" in b1.rewards, "Bronze won: trophy + jersey")
-	_check(
-		b1.rounds() == ["w2_t1", "w2_t2", "w2_t3", "w2_t4", "w2_t5"] and b1.round_i == 0,
-		"Silver III season = world 2 tracks 1-5, from round 1"
-	)
+	_check(b1.round_i == 0, "Silver III season from round 1")
+	_season_shape(b1.rounds(), 2, "Silver III")
 	# Silver I won: Gold III on world 3 (worlds 3-6 arrive with their leagues).
 	var top := RrLeague.new()
 	top.league = 1
@@ -496,10 +500,7 @@ func _league_rules() -> void:
 		"winning Silver I promotes to Gold III"
 	)
 	_check("trophy:1" in top.rewards and "jersey:1" in top.rewards, "league won: trophy + jersey")
-	_check(
-		top.rounds() == ["w3_t1", "w3_t2", "w3_t3", "w3_t4", "w3_t5"],
-		"Gold III = world 3 tracks 1-5"
-	)
+	_season_shape(top.rounds(), 3, "Gold III")
 	_check(
 		RrLeague.rounds_of(5, 1) == ["w6_t6", "w6_t7", "w6_t8", "w1_t1p", "w2_t1p"],
 		"Champion II = W6 tracks 6-8 + the Pro track 1 of worlds 1 and 2"
@@ -676,7 +677,13 @@ func _lock_check() -> void:
 				"locked round %d is W1 track %d" % [r + 1, r + 1]
 			)
 			RaceRiders.record_league_round(heat, [40.0, 50.0, 51.0, 52.0, 53.0, 54.0])
+		var before: int = free_signals
 		var res: Dictionary = RaceRiders.end_season()
+		_check(
+			free_signals == before,
+			"locked season %d: no shell card under the podium" % (season + 1)
+		)
+		RaceRiders.season_card_closed(res)
 		print("locked season %d: %s, signals %d" % [season + 1, res, free_signals])
 		_check(not bool(res["promoted"]), "locked season %d: no promotion" % (season + 1))
 		_check(
@@ -690,6 +697,7 @@ func _lock_check() -> void:
 		var heat2: Array[int] = RaceRiders.league.heat_rivals()
 		RaceRiders.record_league_round(heat2, [40.0, 50.0, 51.0, 52.0, 53.0, 54.0])
 	var res2: Dictionary = RaceRiders.end_season()
+	RaceRiders.season_card_closed(res2)
 	_check(bool(res2["promoted"]) and RaceRiders.league.tier == 1, "unlocked: promotes")
 	_check(free_signals == 1, "no shell card when unlocked")
 	# Locking a save that is past Bronze III parks the ladder; unlocking restores it.
@@ -929,21 +937,38 @@ func _main_checks() -> void:
 	_check(RaceRiders.ghost_rows("w1_t1").size() > 300, "ghost saved for track w1_t1")
 	_check(shown == [11], "level_card_shown(11) for world 1 track 1 (%s)" % [shown])
 	_check(main.card.next_disc.visible, "league card shows the next disc")
-	# Next disc -> board reveal -> league table, rows sliding to new places.
-	main.card.next_disc.press()
+	_check(
+		(
+			main.card.next_disc.disc_radius > main.card.replay_disc.disc_radius
+			and main.card.next_disc.disc_radius > main.card.home_disc.disc_radius
+			and (
+				absf(main.card.next_disc.position.x + main.card.next_disc.size.x * 0.5 - 540.0)
+				< 1.0
+			)
+		),
+		"card: next race is the biggest disc, in the centre; replay is small at the side"
+	)
+	_check(
+		main.card.next_key != "w1_t1" and main.card.next_key == RaceRiders.league.next_track(),
+		"card: next = the next league round on another track (%s)" % main.card.next_key
+	)
+	var season_keys: Array[String] = RaceRiders.league.rounds().duplicate()
+	# Home disc -> board reveal -> league table, rows sliding to new places.
+	main.card.home_disc.press()
 	_check(main.card.reveal_kind() == "board", "first reveal: hoverboard")
 	main.card.tap_reveal()
 	await _frames(2)
-	_check(main.screen == "league" and main.league_screen.visible, "next opens the league screen")
+	_check(main.screen == "league" and main.league_screen.visible, "home opens the league screen")
 	_check(main.league_screen.sliding(), "table rows slide to their new places")
 	_check(main.league_screen.rows.size() == 12, "table: you + 11 rivals")
 	_check(not main.home.visible, "league screen: the top-left square stays free")
 	_audit(main.league_screen, "league screen")
-	# Rounds 2-5 through the race disc, no steering.
+	# Round 2 through the league screen's race disc, rounds 3-5 straight from
+	# the card's next disc; no steering.
 	var seen: Array[String] = ["w1_t1"]
+	main.league_screen.race_disc.press()
+	await _frames(2)
 	for r: int in range(2, 6):
-		main.league_screen.race_disc.press()
-		await _frames(2)
 		_check(main.screen == "race" and main.race_mode == "league", "round %d starts" % r)
 		_check(main.ghost == null, "round %d: no ghost on a track's first run" % r)
 		_check(not main.track_key in seen, "round %d is a new track (%s)" % [r, main.track_key])
@@ -965,7 +990,8 @@ func _main_checks() -> void:
 		_check(main.card_visible() and main.race.player.place <= 3, "round %d: top 3" % r)
 		main.card.next_disc.press()
 		await _frames(2)
-	_check(seen == ["w1_t1", "w1_t2", "w1_t3", "w1_t4", "w1_t5"], "season = W1 tracks 1-5")
+	_check(seen == season_keys, "season = its saved track list %s" % [seen])
+	_season_shape(seen, 1, "first season")
 	_check(main.screen == "season" and main.season_card.visible, "round 5 -> season card")
 	_audit(main.season_card, "season card")
 	print("season: %s" % [main.last_season])
@@ -974,13 +1000,15 @@ func _main_checks() -> void:
 	_check(main.season_card.step == "reward", "promotion card shows the reward")
 	main.season_card.go_disc.press()
 	await _frames(2)
-	_check(main.screen == "league", "then the league screen")
 	_check(
-		RaceRiders.league.tier == 1 and RaceRiders.league.next_track() == "w1_t6",
-		"now Bronze II, next race W1 track 6"
+		main.screen == "race" and main.race_mode == "league" and main.track_key == "w1_t6",
+		"then straight into Bronze II round 1 on W1 track 6 (%s)" % main.track_key
 	)
+	_check(RaceRiders.league.tier == 1, "now Bronze II")
 	_check("paint:0" in RaceRiders.league.rewards, "paint set owned")
 	# Free ride: track page -> board -> race with that track's ghost.
+	main.open_league_screen(false)
+	await _frames(2)
 	main.league_screen.map_disc.press()
 	await _frames(2)
 	_check(main.screen == "page" and main.page.tiles.size() == 16, "track page: 8 + 8 Pro tiles")
@@ -1015,8 +1043,12 @@ func _main_checks() -> void:
 	print("W1 free ride ghost frames drawn: far %d, within 4 m %d" % [far_drawn, near_drawn])
 	_check(near_drawn == 0, "ghost never drawn within 4 m of the player")
 	await _race_to_card(main)
-	_check(not main.card.next_disc.visible, "free-ride card: replay is the big disc")
+	_check(
+		main.card.next_disc.visible and main.card.next_key == RaceRiders.league.next_track(),
+		"free-ride card: the big disc is the waiting league round (%s)" % main.card.next_key
+	)
 	_check(RaceRiders.league.my_points == pts_before, "free rides score no points")
+	await _next_ten(main)
 	# A Pro track loads mirrored on the base bake.
 	main.start_race("w2_t3p", "free")
 	await _frames(2)
@@ -1026,6 +1058,123 @@ func _main_checks() -> void:
 	)
 	main.queue_free()
 	await _frames(2)
+
+
+## Track rotation (owner 2026-10-07) without the scene: every league and tier,
+## the MWM Play free part, the free-ride pick and the save.
+func _rotation_rules() -> void:
+	print("--- track rotation")
+	var bad: Array = []
+	for lgi: int in RrBalance.LEAGUES_BUILT:
+		for tr: int in RrBalance.TIERS_PER_LEAGUE:
+			for sd: int in 20:
+				var ks: Array[String] = RrLeague.mix_rounds(lgi, tr, RrLeague.open_worlds(), sd, "")
+				var w: Dictionary = {}
+				var u: Dictionary = {}
+				for k: String in ks:
+					w[RrTracks.world_of(k)] = true
+					u[k] = true
+					if not RrTracks.exists(k):
+						bad.append(k)
+				if (
+					u.size() != 5
+					or w.size() < 2
+					or RrTracks.world_of(ks[0]) != RrLeague.home_world(lgi) and tr != 1
+				):
+					bad.append([lgi, tr, sd, ks])
+	_check(
+		bad.is_empty(), "every league/tier season: 5 tracks, 2+ worlds, opens at home %s" % [bad]
+	)
+	var one: Array[int] = [1]
+	_check(
+		RrLeague.mix_rounds(0, 0, one, 7, "") == RrLeague.rounds_of(0, 0),
+		"only world 1 open: Bronze III stays W1 tracks 1-5"
+	)
+	_check(
+		RrLeague.mix_rounds(0, 0, RrLeague.open_worlds(), 7, "w1_t1")[0] != "w1_t1",
+		"a season never opens on the track just ridden"
+	)
+	# Save: a restart resumes the same season list; a pre-rotation save mid
+	# season finishes on its old tracks.
+	var a := RrLeague.new()
+	a.save_seed = 99
+	a.round_i = 2
+	var d: Dictionary = a.to_dict()
+	var b := RrLeague.new()
+	b.from_dict(JSON.parse_string(JSON.stringify(d)))
+	_check(b.rounds() == a.rounds() and b.round_i == 2, "restart resumes the same season list")
+	d.erase("season_tracks")
+	var c := RrLeague.new()
+	c.from_dict(d)
+	_check(c.rounds() == RrLeague.rounds_of(0, 0), "old save mid-season keeps its tracks")
+	# MWM Play free part: W1 tracks 1-5 only, also for the free-ride pick.
+	RaceRiders.reset_all()
+	RaceRiders.set_full_unlock(false)
+	var lk: RrLeague = RaceRiders.league
+	_check(lk.rounds() == RrLeague.rounds_of(0, 0), "free part season = W1 tracks 1-5")
+	var outside: int = 0
+	var same: int = 0
+	var cur: String = "w1_t3"
+	for i: int in 200:
+		var nx: String = RaceRiders.pick_next_free(cur)
+		outside += 0 if nx in ["w1_t1", "w1_t2", "w1_t3", "w1_t4", "w1_t5"] else 1
+		same += 1 if nx == cur else 0
+		cur = nx
+	_check(outside == 0 and same == 0, "free part next: inside W1 t1-5, never the same track")
+	RaceRiders.set_full_unlock(true)
+	var worlds: Dictionary = {}
+	same = 0
+	cur = "w2_t4"
+	for i: int in 200:
+		var nx2: String = RaceRiders.pick_next_free(cur)
+		same += 1 if nx2 == cur else 0
+		worlds[RrTracks.world_of(nx2)] = true
+		cur = nx2
+	_check(same == 0 and worlds.size() >= 2, "free next: never the same, 2+ worlds over 200 picks")
+	RaceRiders.reset_all()
+
+
+## A season's tracks: 5 different ones, round 1 in the home world, and at
+## least 2 worlds (every world is open in the stand-alone build).
+func _season_shape(keys: Array[String], home: int, what: String) -> void:
+	var worlds: Dictionary = {}
+	var uniq: Dictionary = {}
+	for k: String in keys:
+		worlds[RrTracks.world_of(k)] = true
+		uniq[k] = true
+	_check(keys.size() == RrBalance.ROUNDS_PER_SEASON, "%s: 5 rounds" % what)
+	_check(uniq.size() == keys.size(), "%s: no track twice %s" % [what, keys])
+	_check(RrTracks.world_of(keys[0]) == home, "%s: round 1 in world %d" % [what, home])
+	_check(worlds.size() >= 2, "%s: tracks from %d worlds" % [what, worlds.size()])
+
+
+## Owner 2026-10-07: 10 taps on the card's big disc give 10 races, never the
+## same track twice in a row, seasons from 2+ worlds, the league moving on.
+func _next_ten(main: RrMain) -> void:
+	print("--- next disc x10")
+	var keys: Array[String] = [main.track_key]
+	var rounds_before: int = RaceRiders.league.seasons * 5 + RaceRiders.league.round_i
+	for i: int in 10:
+		main.card.next_disc.press()
+		await _frames(2)
+		var guard: int = 0
+		while main.screen == "season" and guard < 5:
+			main.season_card.go_disc.press()
+			await _frames(2)
+			guard += 1
+		_check(main.screen == "race", "next tap %d starts a race (%s)" % [i + 1, main.screen])
+		keys.append(main.track_key)
+		await _race_to_card(main)
+	var repeats: int = 0
+	for i: int in range(1, keys.size()):
+		repeats += 1 if keys[i] == keys[i - 1] else 0
+	print("next x10 tracks: %s" % [keys])
+	_check(repeats == 0, "10 next taps: no track twice in a row")
+	var lg: RrLeague = RaceRiders.league
+	_check(
+		lg.seasons * 5 + lg.round_i >= rounds_before + 9,
+		"the league moves on with the next disc (season %d round %d)" % [lg.seasons, lg.round_i]
+	)
 
 
 func _frames(n: int) -> void:

@@ -4,10 +4,10 @@ extends Control
 ## Finish and reward card (GDD 10.3, 17.2-17.3), no words: trophy by place,
 ## the time in digits with the medal flag it earned on this track (a star if
 ## it is a new medal), the ghost line (new best, or the saved best; none on a
-## track's first run), and the discs at y 1420 that act on release: home,
-## and after a league round "next" (biggest, the picture of the next round's
-## world; it opens the league table) + replay (a free ride on the same
-## track), or replay as the biggest after a free ride. Unlocks get their
+## track's first run), and the discs at y 1420 that act on release: "next"
+## in the centre (biggest, the picture of the next track: it starts that race
+## on another track), home on the left (the league table) and a small replay
+## (a free ride on the same track) on the right. Unlocks get their
 ## reveal cards after the first disc tap (the hoverboard), then the chosen
 ## action runs. The card never advances by itself; after 7 s the biggest
 ## disc pulses.
@@ -18,6 +18,13 @@ signal next_pressed
 
 const PANEL := Rect2(90, 330, 900, 900)
 const IDLE_PULSE_S: float = 7.0
+## Disc layout (owner 2026-10-07): the big "next race" disc in the middle,
+## where a child's thumb goes first; home and replay small at the sides.
+const NEXT_AT := Vector2(540, 1420)
+const NEXT_R: float = 135.0
+const HOME_AT := Vector2(185, 1440)
+const REPLAY_AT := Vector2(895, 1440)
+const SIDE_R: float = 100.0
 
 var place: int = 1
 var time_s: float = 0.0
@@ -44,11 +51,11 @@ var _pending: String = ""
 func _ready() -> void:
 	size = Vector2(RrBalance.DESIGN_W, RrBalance.DESIGN_H)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	home_disc = _disc("home", Vector2(270, 1420), 100.0)
-	replay_disc = _disc("replay", Vector2(810, 1420), 120.0)
+	home_disc = _disc("home", HOME_AT, SIDE_R)
+	replay_disc = _disc("replay", REPLAY_AT, SIDE_R)
 	next_disc = RrRaceDisc.new()
 	add_child(next_disc)
-	_place_disc(next_disc, Vector2(810, 1420), 120.0)
+	_place_disc(next_disc, NEXT_AT, NEXT_R)
 	home_disc.tapped.connect(func() -> void: _choose("home"))
 	replay_disc.tapped.connect(func() -> void: _choose("replay"))
 	next_disc.tapped.connect(func() -> void: _choose("next"))
@@ -97,16 +104,15 @@ func show_card(
 	_t = 0.0 if not less_motion else 1.0
 	visible = true
 	home_disc.visible = true
+	replay_disc.visible = true
+	_place_disc(replay_disc, REPLAY_AT, SIDE_R)
 	if next_key != "":
 		next_disc.visible = true
 		next_disc.track_key = next_key
-		_place_disc(next_disc, Vector2(810, 1420), 120.0)
-		replay_disc.visible = true
-		_place_disc(replay_disc, Vector2(540, 1420), 100.0)
+		_place_disc(next_disc, NEXT_AT, NEXT_R)
 	else:
 		next_disc.visible = false
-		replay_disc.visible = true
-		_place_disc(replay_disc, Vector2(810, 1420), 120.0)
+		_place_disc(replay_disc, NEXT_AT, NEXT_R)
 	modulate.a = 0.0 if not less_motion else 1.0
 	set_process(true)
 	RrDisc.block_input(int(RrBalance.HOLDOVER_S * 1000.0))

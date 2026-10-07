@@ -23,8 +23,8 @@ extends Node
 ##                     tumbleweed, rim highway Høy and Lav; W3 ice cave, W4
 ##                     lava rail and vent, W5 split path and waterfall, W6
 ##                     container canyon and crane jump), the 6-world page
-##   budget          - draw calls and triangles on all 96 races, Høy and Lav,
-##                     at six points per track (a pack teleported there)
+##   budget          - draw calls and triangles on every racing frame of all 96
+##                     races, Høy and Lav (full idle races, a ghost ahead)
 ##   probe           - dev: CAPTURE_PLAN shots (see _phase_probe)
 
 var out_dir: String = OS.get_environment("CAPTURE_DIR")
@@ -128,7 +128,8 @@ func _phase_shots() -> void:
 	await _shot("05_settings")
 	main.settings.play_disc.press()
 	await _wait_s(0.3)
-	main.card.next_disc.press()
+	# The big centre disc races on; the home disc opens the league table.
+	main.card.home_disc.press()
 	await _wait_s(2.3)
 	await _shot("06_reveal_board")
 	main.card.tap_reveal()
@@ -158,6 +159,7 @@ func _phase_shots() -> void:
 	await _shot("10_promotion_reward")
 	main.season_card.go_disc.press()
 	await _wait_s(0.3)
+	# (go starts Bronze II round 1 straight away; the shots go back to the table)
 	# 9 h away: the rivals get their form arrows (points never move).
 	RaceRiders.league.apply_away(9.0, 3)
 	main.open_league_screen(false)
@@ -464,59 +466,107 @@ func _phase_worlds() -> void:
 
 
 ## Draw calls on every race (owner 10-07: Høy <= 80, Lav <= 60, Pro evening
-## included): a pack teleported to six points per track, the worst kept.
+## included). QA 10-07: six teleport points missed the peaks, so this drives a
+## full idle Lett race per track and tier and keeps the worst racing frame,
+## with a ghost riding ahead (its draws count too). BUDGET_ONLY="w1,w4" filters.
 func _phase_budget() -> void:
 	RaceRiders.hover_unlocked = true
-	var only: String = OS.get_environment("BUDGET_ONLY")
+	RaceRiders.seen_first_swap = true
+	var only: PackedStringArray = OS.get_environment("BUDGET_ONLY").split(",", false)
 	var rows: Array = []
 	for key: String in RrTracks.all_keys(true):
-		if only != "" and not key.begins_with(only):
+		var take: bool = only.is_empty()
+		for o: String in only:
+			take = take or key.begins_with(o)
+		if not take:
 			continue
-		main.start_race(key, "free")
-		await _wait_s(0.2)
-		var trk: RrTrack = main.track
-		var pts: Array[float] = [0.04, 0.2, 0.38, 0.56, 0.74]
-		var ss: Array[float] = []
-		for f: float in pts:
-			ss.append(trk.length * f)
-		ss.append(trk.zone_at("lip", trk.kickers[trk.kickers.size() - 2]) - 25.0)
-		var worst: Array = [0, 0, 0, 0, 0.0, 0.0]
-		for at: float in ss:
-			await _teleport(at)
-			for high: bool in [true, false]:
-				main.world.apply_quality(high)
-				main.world.call("_update_casters", main.race, 1.0)
-				await _frames(5)
-				var d: int = _draws()
-				var t: int = _tris()
-				var i: int = 0 if high else 2
-				if d > int(worst[i]):
-					worst[i] = d
-					worst[4 + i / 2] = at
-				worst[i + 1] = maxi(int(worst[i + 1]), t)
-		main.world.apply_quality(true)
-		Engine.time_scale = 1.0
-		rows.append([key] + worst)
+		var row: Array = [key]
+		for high: bool in [true, false]:
+			RaceRiders.set_quality_high(high)
+			main.start_race(key, "free")
+			await _frames(2)
+			main.world.apply_quality(high)
+			main.ghost = RrGhost.new(_ghost_ahead(main.track))
+			row.append_array(await _race_worst(80 if high else 60))
+		rows.append(row)
 		print(
 			(
-				"BUDGET %-7s hoy %3d draws (s %4.0f) %4dk tris | lav %3d draws (s %4.0f) %4dk tris"
-				% [
-					key,
-					worst[0],
-					worst[4],
-					int(worst[1]) / 1000,
-					worst[2],
-					worst[5],
-					int(worst[3]) / 1000
-				]
+				(
+					"BUDGET %-7s hoy %3d draws (s %4.0f, %3d frames over) %4dk tris"
+					% [key, row[1], row[2], row[4], int(row[3]) / 1000]
+				)
+				+ (
+					" | lav %3d draws (s %4.0f, %3d frames over) %4dk tris"
+					% [row[5], row[6], row[8], int(row[7]) / 1000]
+				)
+			)
+		)
+	RaceRiders.set_quality_high(true)
+	var worlds: Dictionary = {}
+	for r: Array in rows:
+		var w: int = RrTracks.world_of(String(r[0]))
+		if not worlds.has(w):
+			worlds[w] = [0, 0, 0, 0, 0, 0]
+		var a: Array = worlds[w]
+		a[0] = maxi(a[0], r[1])
+		a[1] = maxi(a[1], r[3])
+		a[2] += r[4]
+		a[3] = maxi(a[3], r[5])
+		a[4] = maxi(a[4], r[7])
+		a[5] += r[8]
+	for w: int in worlds:
+		var a2: Array = worlds[w]
+		print(
+			(
+				(
+					"BUDGET W%d max: Høy %d draws %dk tris (%d frames over 80)"
+					% [w, a2[0], a2[1] / 1000, a2[2]]
+				)
+				+ " | Lav %d draws %dk tris (%d frames over 60)" % [a2[3], a2[4] / 1000, a2[5]]
 			)
 		)
 	var hi: int = 0
 	var lo: int = 0
-	for r: Array in rows:
-		hi = maxi(hi, int(r[1]))
-		lo = maxi(lo, int(r[3]))
+	for r2: Array in rows:
+		hi = maxi(hi, int(r2[1]))
+		lo = maxi(lo, int(r2[5]))
 	print("BUDGET worst over %d races: Høy %d, Lav %d (limits 80 / 60)" % [rows.size(), hi, lo])
+
+
+## One race to the card at 3x: [max draws, s at the max, max triangles,
+## frames over the limit] over every racing frame.
+func _race_worst(limit: int) -> Array:
+	var maxd: int = 0
+	var at_s: float = 0.0
+	var maxt: int = 0
+	var over: int = 0
+	Engine.time_scale = 3.0
+	var t0: int = Time.get_ticks_msec()
+	while not main.card_visible() and Time.get_ticks_msec() - t0 < 300000:
+		await get_tree().process_frame
+		if main.race.phase != RrRace.Phase.RACE or main.race.player.finished:
+			continue
+		var d: int = _draws()
+		if d > maxd:
+			maxd = d
+			at_s = main.race.player.s
+		if d > limit:
+			over += 1
+		maxt = maxi(maxt, _tris())
+	Engine.time_scale = 1.0
+	return [maxd, at_s, maxt, over]
+
+
+## A ghost 15 m ahead of the start at 1.1 x cruise: on screen most of the race.
+func _ghost_ahead(trk: RrTrack) -> Array:
+	var out: Array = []
+	var v: float = RrBalance.CRUISE_MPS * 1.1
+	var n: int = int(trk.length / v * float(RrBalance.GHOST_HZ)) + 2
+	for i: int in n:
+		var sg: float = minf(trk.length, 15.0 + v * float(i) / float(RrBalance.GHOST_HZ))
+		var veh: int = RrRider.BOARD if trk.is_smooth(sg) else RrRider.BIKE
+		out.append([sg, trk.kid_x(sg), 0.0, veh])
+	return out
 
 
 ## Dev probe: CAPTURE_PLAN="w3_t1@sig-20,w4_t2@0.4" (s in metres, a share of
