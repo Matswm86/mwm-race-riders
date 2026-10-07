@@ -20,6 +20,9 @@ var _glows: MultiMeshInstance3D
 var _weather: Array[GPUParticles3D] = []
 var _shafts: MultiMeshInstance3D
 var _roll_dust_t: PackedFloat32Array = PackedFloat32Array()
+## W6 night (DESIGN 11.5): the contact quads become warm additive light pools
+## that reach ahead of each racer, so the dark riders stand out against them.
+var _pools: bool = false
 var _rng := RandomNumberGenerator.new()
 
 
@@ -33,7 +36,7 @@ func setup(trk: RrTrack) -> void:
 
 ## Høy: the sun casts real shadows, so no contact quads; shafts only in Høy.
 func set_tier(sun_shadows: bool, shafts: bool) -> void:
-	_contacts.visible = not sun_shadows
+	_contacts.visible = _pools or not sun_shadows
 	if _shafts != null:
 		_shafts.visible = shafts
 	# Lav (32-bit tablet, <= 60 draws): one weather layer per world.
@@ -99,6 +102,13 @@ func _build_fx() -> void:
 	cm.albedo_texture = shadow_tex
 	cm.albedo_color = Color(0, 0, 0, 0.75)
 	cm.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	_pools = look.has("racer_pool")
+	if _pools:
+		var pool: Array = look["racer_pool"]  # [size m, metres ahead, colour]
+		cq.size = pool[0]
+		cm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		cm.albedo_texture = load("res://assets/textures/world6/fx_light_pool.png")
+		cm.albedo_color = pool[2]
 	var none: Array[Transform3D] = []
 	for i: int in 6:
 		none.append(Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
@@ -288,7 +298,15 @@ func _update_contacts(race: RrRace) -> void:
 		)
 		base.origin.y = track.center(r.s).y + track.ramp_height(r.s) + 0.04
 		var air: float = clampf(r.h / 3.0, 0.0, 1.0)
-		if lav:
+		if _pools:
+			# Ahead of the racer: from the chase camera the rider's back is seen
+			# against the asphalt a few metres in front of it.
+			var kp: float = lerpf(1.0, 0.5, air)
+			var ahead: Vector3 = base.basis * Vector3(0.0, 0.0, -float(look["racer_pool"][1]))
+			_contacts.multimesh.set_instance_transform(
+				i, Transform3D(base.basis.scaled(Vector3.ONE * kp), base.origin + ahead)
+			)
+		elif lav:
 			var k: float = lerpf(1.0, 0.6, air) if not r.down() else 0.0
 			_contacts.multimesh.set_instance_transform(
 				i, Transform3D(base.basis.scaled(Vector3.ONE * k), base.origin)

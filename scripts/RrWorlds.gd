@@ -348,7 +348,8 @@ const W5: Dictionary = {
 	"length": 1500.0,
 	"look":
 	{
-		"sky": "res://assets/textures/world5/sky_rainforest_trail_1k.exr",
+		# 2k: the 1k panorama showed pixel blocks through canopy gaps (QA 10-07).
+		"sky": "res://assets/textures/world5/sky_rainforest_trail_2k.hdr",
 		"sun_rot": Vector3(-41.0, 135.0, 0.0),
 		"sun_color": Color(1.000, 0.949, 0.871),
 		"sun_energy": 0.7,
@@ -371,22 +372,28 @@ const W6: Dictionary = {
 	"look":
 	{
 		"sky": "res://assets/textures/world6/sky_qwantani_moonrise_puresky_1k.exr",
-		"sky_energy": 0.035,
+		"sky_energy": 0.07,
 		"sun_rot": Vector3(-14.0, 135.0, 0.0),
 		"sun_color": Color(0.62, 0.71, 0.85),
-		"sun_energy": 0.2,
+		"sun_energy": 0.35,
 		"sky_yaw": 0.0,
-		"exposure": 1.85,
+		"exposure": 3.2,
 		"glow_threshold": 1.0,
 		"fog_begin": 30.0,
 		"fog_end": 600.0,
-		"fog_color": Color(0.10, 0.11, 0.14),
+		"fog_color": Color(0.16, 0.18, 0.24),
 		"fog_max": 0.45,
 		"dust": Color(0.30, 0.30, 0.32),
 		"weather": "drizzle",
 		"far": 1300.0,
 		"lamps": true,
+		# QA 2026-10-07: the night was 62-71 % black and the player 1.02:1
+		# against the asphalt. A brighter blue-grey fill, a warm pool ahead of
+		# every racer (DESIGN 11.5) and a rim + key light on the riders only.
 		"ambient": Color(0.16, 0.19, 0.26),
+		"ambient_energy": 2.2,
+		"racer_pool": [Vector2(2.2, 3.0), 0.2, Color(1.0, 1.0, 1.0, 0.18)],
+		"rim_light": [Color(1.0, 0.80, 0.60), 5.0, Color(0.85, 0.90, 1.0), 2.6],
 	},
 }
 
@@ -499,8 +506,8 @@ const EVENING: Dictionary = {
 		"sun_color": Color(0.950, 0.620, 0.450),
 		"sun_energy": 0.35,
 		"sky_energy": 0.12,
-		"exposure": 1.6,
-		"fog_color": Color(0.20, 0.15, 0.15),
+		"exposure": 2.6,
+		"fog_color": Color(0.24, 0.19, 0.19),
 		"fog_max": 0.45,
 	},
 }

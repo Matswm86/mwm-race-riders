@@ -9,6 +9,8 @@ extends Node3D
 ## DESIGN 2c). Wheels spin with the speed. Reads RrRider state every frame.
 
 const WHEEL_R: float = 0.368  # 29 in wheel
+## Render layer of every racer mesh on top of layer 1: the W6 rim light lights only it.
+const RIM_LAYER: int = 2
 const BIKE_TRICKS: Array[String] = ["trick_nohands", "tailwhip", "trick_superman"]
 const BOARD_TRICKS: Array[String] = ["spin", "board_grab", "spin_grab"]
 
@@ -80,6 +82,7 @@ func _instance(path: String, kind: String, ghost_mat: Material) -> Node3D:
 			m.mesh = RrMats.uv_fixed(m.mesh)
 		m.material_override = ghost_mat if ghost_mat != null else RrMats.livery(kind, livery)
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		m.layers = 1 | RIM_LAYER
 		_meshes.append(m)
 		var lod_path: String = "res://assets/generated/%s_lod.res" % kind
 		if ghost_mat == null and kind != "hoverboard" and ResourceLoader.exists(lod_path):
@@ -89,6 +92,7 @@ func _instance(path: String, kind: String, ghost_mat: Material) -> Node3D:
 			lo.skin = m.skin
 			lo.material_override = m.material_override
 			lo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			lo.layers = 1 | RIM_LAYER
 			lo.visible = false
 			m.get_parent().add_child(lo)
 			lo.skeleton = lo.get_path_to(m.get_parent())

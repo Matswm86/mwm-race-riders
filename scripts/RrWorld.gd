@@ -258,6 +258,7 @@ func _build_environment() -> void:
 		# W6 night: a little blue-grey fill so the quay is never pure black.
 		env.ambient_light_color = look["ambient"]
 		env.ambient_light_sky_contribution = 0.35
+		env.ambient_light_energy = float(look.get("ambient_energy", 1.0))
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# AgX: matches the approved Blender AgX mocks better than ACES (side by
 	# side on the real build: ACES pushed the pine-needle verge to orange).
@@ -293,6 +294,23 @@ func _build_environment() -> void:
 	sun.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
 	add_child(sun)
 	_ambient = env.ambient_light_energy
+	if look.has("rim_light"):
+		# W6 night: two lights that touch only the riders (render layer 2) so
+		# they read against the asphalt: a rim from ahead and above that edges
+		# their outlines, and a soft key from behind the camera on their backs.
+		var rl: Array = look["rim_light"]  # [rim colour, rim energy, key colour, key energy]
+		# Camera space directions the light travels (rim: down and back toward
+		# the camera; key: down and forward, a little from the left).
+		var dirs: Array[Vector3] = [Vector3(0.35, -0.75, 1.0), Vector3(0.3, -0.7, -1.0)]
+		for i: int in 2:
+			var dl := DirectionalLight3D.new()
+			dl.light_color = rl[2 * i]
+			dl.light_energy = float(rl[2 * i + 1])
+			dl.light_cull_mask = RrRiderView.RIM_LAYER
+			dl.shadow_enabled = false
+			dl.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
+			camera.add_child(dl)
+			dl.transform = Transform3D.IDENTITY.looking_at(dirs[i], Vector3.UP)
 
 
 ## Terrain material per world (DESIGN 9 / 10 layer tables).
@@ -1100,6 +1118,16 @@ func _update_world_fx(race: RrRace, dt: float) -> void:
 				float(best[i][0]) < 1e8 and (i == 0 or features.get("shadows", false))
 			)
 			_omnis[i].global_position = best[i][1]
+		# Around the crane jump no lamp stands near the camera: the second light
+		# becomes a crane flood over the player (QA 10-07: dark frame).
+		var flood: bool = _omnis.size() > 1 and float(best[0][0]) > 900.0
+		if flood:
+			_omnis[1].visible = true
+			_omnis[1].global_position = (
+				track.world_point(p.s + 3.0, p.x, 0.0) + Vector3.UP * (track.ramp_height(p.s) + 8.0)
+			)
+		if _omnis.size() > 1:
+			_omnis[1].omni_range = 22.0 if flood else 14.0
 
 
 func _update_hay(race: RrRace) -> void:
