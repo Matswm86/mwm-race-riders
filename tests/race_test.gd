@@ -1,21 +1,27 @@
+# gdlint: disable=max-file-lines
 extends Node
 
 ## Headless race test. Run with a throwaway user dir, at portrait size:
 ##   XDG_DATA_HOME=<tmp> godot --headless --audio-driver Dummy --resolution 1080x1920 \
 ##     res://tests/race_test.tscn
-## 1. Every built track (16 base + 16 Pro): the bake is current (base
-##    tracks), idle Lett finishes in 35-55 s every run and in the top 3 in
-##    >= 9 of 10 runs (GDD 14 acceptance; Pro: >= 4 of 5, rivals +0.01),
+## 1. Every built track (48 base + 48 Pro, worlds 1-6): the bake is current
+##    (base tracks), idle Lett finishes in 41-51 s every run (owner 10-07)
+##    and in the top 3 in >= 9 of 10 runs (GDD 14; Pro: >= 4 of 5, rivals +0.01),
 ##    never rides through a mud/sand patch, never drops under 18 m/s, and no
 ##    pad, hindrance or roller lies inside a landing slope (GDD 6.3).
-## 2. Slice checks on world 1 and 2 track 1: idle Vanlig, skilled Vanlig bot
-##    (GDD 14), knock-off bot (GDD 4.7), ghost fade, flash limiter.
+## 2. Track 1 of every world: idle Vanlig, skilled Vanlig bot (GDD 14),
+##    knock-off bot (GDD 4.7); ghost fade, flash limiter. World features: the
+##    W3 ice and W6 steel slide without slowing, the W4 vent launches only
+##    while it puffs, the W5 island keeps riders on a route, W6 rings speed.
 ## 3. League rules (GDD 17.2): Vanlig demotion is off by default and only
 ##    demotes when switched on; Lett never demotes and promotes anyway after
 ##    2 stuck seasons; rivals do not score while the player is away (form
 ##    arrows only after 8 h); the MWM Play free part is the Bronze III season
 ##    and its season end sends free_levels_finished instead of promoting;
-##    a version-1 (two-world) save migrates without losing anything.
+##    a version-1 (two-world) save migrates without losing anything; a
+##    version-2 save (Bronze/Silver ladder) migrates to version 3, a Silver
+##    winner moving on to Gold III; an idle Lett rider climbs the whole ladder
+##    Bronze III -> Champion I in real races and is never demoted.
 ## 4. Touch targets of the league screen, track page, board and season card:
 ##    >= 200 px, nothing in the shell's top-left 232 px square, nothing at
 ##    y >= 1664.
@@ -36,15 +42,18 @@ func _ready() -> void:
 	RaceRiders.ghost_on = true
 	_bake_check()
 	_all_tracks()
-	for w: int in [1, 2]:
+	for w: int in range(1, RrBalance.WORLDS_BUILT + 1):
 		_sim_batches(w)
 		_knock_batch(w)
+	_feature_checks()
 	_ghost_fade_check()
 	_flash_check()
 	_league_rules()
 	_lock_check()
 	_away_check()
 	_migration_check()
+	_migration_v2_check()
+	_ladder_climb()
 	RaceRiders.reset_all()
 	RaceRiders.easy = true
 	await _main_checks()
@@ -111,17 +120,17 @@ func _sim_batches(w: int) -> void:
 	var min_v: float = 999.0
 	var sand: int = 0
 	for k: int in 10:
-		var r: RrRace = _run(w, true, w == 2, "idle", 500 + k)
+		var r: RrRace = _run(RrTracks.key(w, 1), true, w >= 2, "idle", 500 + k)
 		times.append(snappedf(r.player.finish_time, 0.1))
 		places.append(r.player.place)
 		min_v = minf(min_v, r.min_speed_after_go)
 		sand += int(r.get_meta(&"patch_frames"))
 	var in_window: bool = true
 	for t: float in times:
-		in_window = in_window and t >= 35.0 and t <= 55.0
+		in_window = in_window and t >= 41.0 and t <= 51.0
 	var top3: int = places.filter(func(p: int) -> bool: return p <= 3).size()
 	print("idle Lett times %s places %s" % [times, places])
-	_check(in_window, "idle Lett: every race finishes in 35-55 s")
+	_check(in_window, "idle Lett: every race finishes in 41-51 s")
 	_check(top3 >= 9, "idle Lett: top 3 in %d of 10 (need 9)" % top3)
 	_check(min_v >= 17.99, "speed never below 18 m/s after GO (min %.2f)" % min_v)
 	_check(sand == 0, "idle Lett never rides through a mud/sand patch (%d frames)" % sand)
@@ -136,7 +145,7 @@ func _sim_batches(w: int) -> void:
 	times.clear()
 	places.clear()
 	for k: int in 10:
-		var r2: RrRace = _run(w, false, true, "idle", 600 + k)
+		var r2: RrRace = _run(RrTracks.key(w, 1), false, true, "idle", 600 + k)
 		times.append(snappedf(r2.player.finish_time, 0.1))
 		places.append(r2.player.place)
 	print("idle Vanlig times %s places %s" % [times, places])
@@ -144,7 +153,7 @@ func _sim_batches(w: int) -> void:
 	var wins: int = 0
 	var margins: Array[float] = []
 	for k: int in 10:
-		var r3: RrRace = _run(w, false, true, "skilled", 700 + k)
+		var r3: RrRace = _run(RrTracks.key(w, 1), false, true, "skilled", 700 + k)
 		var second: float = 999.0
 		for o: RrRider in r3.riders:
 			if not o.is_player:
@@ -172,7 +181,7 @@ func _knock_batch(w: int) -> void:
 	var down: bool = false
 	var reknock: int = 0
 	for k: int in 10:
-		var r: RrRace = _run(w, k % 2 == 0, true, "knock", 800 + k)
+		var r: RrRace = _run(RrTracks.key(w, 1), k % 2 == 0, true, "knock", 800 + k)
 		var c: int = 0
 		for o: RrRider in r.riders:
 			c += o.knock_count
@@ -209,6 +218,8 @@ func _landing_bad(trk: RrTrack) -> Array:
 			items.append(["patch", float(pa[0]), RrBalance.LANDING_CLEAR_AFTER_M])
 		for ro: Array in trk.rollers:
 			items.append(["roller", float(ro[0]), RrBalance.LANDING_CLEAR_AFTER_M])
+		for hp: float in trk.hops:
+			items.append(["hop", hp, RrBalance.LANDING_CLEAR_AFTER_M])
 		for it: Array in items:
 			if float(it[1]) > a and float(it[1]) < b + float(it[2]):
 				bad.append("%s s %.0f in K%d slope %.0f-%.0f" % [it[0], it[1], k + 1, a, b])
@@ -219,13 +230,18 @@ func _landing_bad(trk: RrTrack) -> Array:
 func _all_tracks() -> void:
 	print("--- all tracks, idle Lett")
 	var keys: Array[String] = RrTracks.all_keys(true)
-	_check(keys.size() == 32, "32 tracks registered (16 base + 16 Pro): %d" % keys.size())
+	var n_all: int = RrBalance.WORLDS_BUILT * RrBalance.TRACKS_PER_WORLD * 2
+	_check(
+		keys.size() == 96 and n_all == 96,
+		"96 races registered (48 base + 48 Pro): %d" % keys.size()
+	)
+	var summary: Array = []
 	var lengths_ok: bool = true
 	for key: String in keys:
 		var trk := RrTrack.new(key)
 		var want: float = (
 			RrBalance.WORLD_LENGTH_M[trk.world_id - 1]
-			+ RrBalance.TRACK_LENGTH_STEP_M * float(trk.number - 1)
+			+ RrBalance.TRACK_STEP_W[trk.world_id - 1] * float(trk.number - 1)
 		)
 		lengths_ok = lengths_ok and absf(trk.length - want) < 0.5 and RrTracks.exists(key)
 		var runs: int = 5 if trk.pro else 10
@@ -240,7 +256,7 @@ func _all_tracks() -> void:
 			min_v = minf(min_v, r.min_speed_after_go)
 			patch += int(r.get_meta(&"patch_frames"))
 		var bad: Array = _landing_bad(trk)
-		var ok_t: bool = times.all(func(t: float) -> bool: return t >= 35.0 and t <= 55.0)
+		var ok_t: bool = times.all(func(t: float) -> bool: return t >= 41.0 and t <= 51.0)
 		var top3: int = places.filter(func(p: int) -> bool: return p <= 3).size()
 		var ok_p: bool = top3 >= runs - 1
 		print(
@@ -261,11 +277,15 @@ func _all_tracks() -> void:
 		_check(
 			ok_t and ok_p and patch == 0 and min_v >= 17.99 and bad.is_empty(),
 			(
-				"%s: idle Lett finishes, top 3 in %d of %d, no patch, >= 18 m/s, landing clear"
+				"%s: idle Lett 41-51 s, top 3 in %d of %d, no patch, >= 18 m/s, landing clear"
 				% [key, top3, runs]
 			)
 		)
-	_check(lengths_ok, "every track is world length + 25 m x (k - 1) long")
+		summary.append("%s %.1f-%.1f s top3 %d/%d" % [key, times.min(), times.max(), top3, runs])
+	print("TRACK TABLE (idle Lett, time range, top 3):")
+	for line: String in summary:
+		print("  " + line)
+	_check(lengths_ok, "every track is world length + step x (k - 1) long")
 
 
 ## GDD 10.8: hidden at 4 m and closer, full GHOST_ALPHA from 6 m.
@@ -308,7 +328,7 @@ func _bake_check() -> void:
 		)
 		all_ok = all_ok and ok_v and fresh == shipped
 	print("bakes total %d KB" % total_kb)
-	_check(all_ok, "all 16 base-track bakes are current (Pro tracks reuse them mirrored)")
+	_check(all_ok, "all 48 base-track bakes are current (Pro tracks reuse them mirrored)")
 
 
 func _flash_check() -> void:
@@ -464,7 +484,7 @@ func _league_rules() -> void:
 		b1.rounds() == ["w2_t1", "w2_t2", "w2_t3", "w2_t4", "w2_t5"] and b1.round_i == 0,
 		"Silver III season = world 2 tracks 1-5, from round 1"
 	)
-	# Silver I won: no Gold world yet, so the player stays (top_done).
+	# Silver I won: Gold III on world 3 (worlds 3-6 arrive with their leagues).
 	var top := RrLeague.new()
 	top.league = 1
 	top.tier = 2
@@ -472,10 +492,170 @@ func _league_rules() -> void:
 	top.my_points = 99
 	var rt: Dictionary = top.end_season(false, false)
 	_check(
-		bool(rt["promoted"]) and top.league == 1 and top.tier == 2 and top.top_done,
-		"winning Silver I keeps the player in Silver I until Gold's world exists"
+		bool(rt["promoted"]) and top.league == 2 and top.tier == 0 and not top.top_done,
+		"winning Silver I promotes to Gold III"
 	)
 	_check("trophy:1" in top.rewards and "jersey:1" in top.rewards, "league won: trophy + jersey")
+	_check(
+		top.rounds() == ["w3_t1", "w3_t2", "w3_t3", "w3_t4", "w3_t5"],
+		"Gold III = world 3 tracks 1-5"
+	)
+	_check(
+		RrLeague.rounds_of(5, 1) == ["w6_t6", "w6_t7", "w6_t8", "w1_t1p", "w2_t1p"],
+		"Champion II = W6 tracks 6-8 + the Pro track 1 of worlds 1 and 2"
+	)
+	# Champion I won: the end of the ladder (top_done, stays in Champion I).
+	var ch := RrLeague.new()
+	ch.league = 5
+	ch.tier = 2
+	ch.round_i = 5
+	ch.my_points = 99
+	var rc: Dictionary = ch.end_season(true, false)
+	_check(
+		bool(rc["promoted"]) and ch.league == 5 and ch.tier == 2 and ch.top_done,
+		"winning Champion I: trophy, the ladder is done (top_done)"
+	)
+	_check("trophy:5" in ch.rewards, "Champion trophy")
+
+
+## World features in the pure sim (GDD 6.0).
+func _feature_checks() -> void:
+	print("--- world features")
+	var trk := RrTrack.new("w3_t1")
+	var ice: Array = []
+	for p: Array in trk.patches:
+		if String(p[4]) == "ice":
+			ice = p
+	_check(not ice.is_empty(), "W3 track 1 has an ice patch")
+	if not ice.is_empty():
+		var sx: float = (float(ice[0]) + float(ice[1])) * 0.5
+		var x: float = (float(ice[2]) + float(ice[3])) * 0.5
+		_check(
+			trk.patch_slides(sx, x) and trk.patch_mult(sx, x, false, true) == 1.0,
+			"ice slides, never slows"
+		)
+	_check(
+		RrTrack.kind_mult("ash", true, true) == 1.0 and RrTrack.kind_mult("ash", false, true) < 1.0,
+		"the board floats over ash"
+	)
+	_check(
+		(
+			RrTrack.kind_mult("ford", true, false) == 1.0
+			and RrTrack.kind_mult("ford", false, false) < 1.0
+		),
+		"the board is immune to the ford"
+	)
+	var race := RrRace.new()
+	race.setup(RrTrack.new("w4_t1"), false, true, 3)
+	_check(
+		race.vent_puffing(0.5) and not race.vent_puffing(1.5),
+		"W4 vent puffs 1.2 s of every 2 s (Vanlig)"
+	)
+	var w5 := RrTrack.new("w5_t1")
+	var mid: float = (float(w5.split[0]) + float(w5.split[1])) * 0.5
+	var isl: Vector2 = w5.island(mid)
+	_check(
+		isl.x < isl.y and w5.kid_x(mid) < isl.x,
+		"W5 split: island between the routes, kid line on the bridge"
+	)
+	var r5: RrRace = _run("w5_t1", false, true, "skilled", 44)
+	_check(r5.player.finished, "W5 skilled bot finishes through the split")
+	var r6: RrRace = _run("w6_t1", true, true, "idle", 45)
+	_check(r6.player.finished, "W6 idle finishes (rings %d)" % r6.track.rings.size())
+	var w6 := RrTrack.new("w6_t1")
+	_check(
+		w6.rings.size() >= 3 and not w6.lifts.is_empty(),
+		"W6: air rings over the jumps, the stack ramp lifts the line"
+	)
+
+
+## Version-2 save (Bronze/Silver ladder) -> version 3: nothing lost, a Silver
+## winner moves on to Gold III; a winner mid-season promotes at its end.
+func _migration_v2_check() -> void:
+	print("--- save migration v2 -> v3")
+	RaceRiders.reset_all()
+	RaceRiders.record_finish("w2_t3", 46.0, 1, [[0.0, 0.0, 0.0, 0]])
+	RaceRiders.league.league = 1
+	RaceRiders.league.tier = 2
+	RaceRiders.league.top_done = true
+	RaceRiders.league.rewards.append_array(["trophy:0", "jersey:0", "trophy:1", "jersey:1"])
+	RaceRiders.save_game()
+	var d: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(RrState.SAVE_PATH))
+	d["version"] = 2
+	_write_save(d)
+	RaceRiders.load_game()
+	var lg: RrLeague = RaceRiders.league
+	_check(RaceRiders.migrated_from == 2, "version-2 save detected")
+	_check(lg.league == 2 and lg.tier == 0 and not lg.top_done, "Silver winner -> Gold III")
+	_check(
+		"trophy:1" in lg.rewards and absf(RaceRiders.best_time("w2_t3") - 46.0) < 0.001,
+		"trophies and best times kept"
+	)
+	# Mid-season (round 3 of a replay season): finish it, then promote.
+	d["league"]["season_round"] = 2
+	d["league"]["table"]["me"] = [12, 0, 6]
+	_write_save(d)
+	RaceRiders.load_game()
+	lg = RaceRiders.league
+	_check(
+		lg.league == 1 and lg.round_i == 2 and lg.my_points == 12,
+		"mid-season: the season and its points are kept"
+	)
+	for r: int in 3:
+		lg.record_round(lg.heat_rivals(), [60.0, 40.0, 41.0, 42.0, 43.0, 44.0], true)
+	var e: Dictionary = lg.end_season(true, false)
+	_check(
+		bool(e["promoted"]) and lg.league == 2 and lg.tier == 0,
+		"that season's end promotes to Gold III"
+	)
+	RaceRiders.save_game()
+	var d2: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(RrState.SAVE_PATH))
+	_check(int(d2["version"]) == 3, "saved as version 3")
+
+
+## GDD 17.2: an idle Lett rider (holds nothing) climbs Bronze III -> Champion
+## I in real races (rubber band on, league rival skills); never demoted.
+func _ladder_climb() -> void:
+	print("--- full ladder, idle Lett")
+	var lg := RrLeague.new()
+	lg.save_seed = 777
+	var path: Array[String] = []
+	var demoted: bool = false
+	var safety: int = 0
+	var seasons: int = 0
+	var places: Array[int] = []
+	while not lg.top_done and seasons < 40:
+		for r: int in RrBalance.ROUNDS_PER_SEASON:
+			var key: String = lg.next_track()
+			var heat: Array[int] = lg.heat_rivals()
+			var skills: Array[float] = lg.heat_skills(heat, true, RrTracks.is_pro(key))
+			var race: RrRace = _run(key, true, true, "idle", 3000 + seasons * 10 + r, skills)
+			var times: Array[float] = []
+			for rd: RrRider in race.riders:
+				times.append(rd.finish_time)
+			places.append(int(lg.record_round(heat, times, true)["place"]))
+		var lvl: int = lg.league * 3 + lg.tier
+		var e: Dictionary = lg.end_season(true, false)
+		seasons += 1
+		demoted = demoted or bool(e["demoted"]) or lg.league * 3 + lg.tier < lvl
+		safety += 1 if bool(e["safety"]) else 0
+		path.append(
+			(
+				"%s%s r%d"
+				% [
+					RrBalance.LEAGUES[int(e["from_league"])],
+					["III", "II", "I"][int(e["from_tier"])],
+					int(e["rank"])
+				]
+			)
+		)
+	var top3: int = places.filter(func(p: int) -> bool: return p <= 3).size()
+	print("ladder: %d seasons %s" % [seasons, path])
+	print("ladder races %d, top 3 in %d, safety-net promotions %d" % [places.size(), top3, safety])
+	_check(lg.top_done and lg.league == 5 and lg.tier == 2, "idle Lett reaches and wins Champion I")
+	_check(not demoted, "Lett is never demoted on the way up")
+	for i: int in 6:
+		_check(("trophy:%d" % i) in lg.rewards, "trophy of league %d" % i)
 
 
 ## MWM Play free part (GDD 17.5): Bronze III only; season end -> shell card.
@@ -633,8 +813,8 @@ func _migration_check() -> void:
 	RaceRiders.load_game()
 	var d: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(RrState.SAVE_PATH))
 	_check(
-		int(d["version"]) == 2 and absf(RaceRiders.best_time("w2_t1") - 44.5) < 0.001,
-		"saved again as version 2 with nothing lost"
+		int(d["version"]) == 3 and absf(RaceRiders.best_time("w2_t1") - 44.5) < 0.001,
+		"saved again as version 3 with nothing lost"
 	)
 	RaceRiders.sfx_on = true
 	RaceRiders.less_motion = false
