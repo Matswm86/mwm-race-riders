@@ -1,3 +1,4 @@
+# gdlint: disable=max-file-lines
 class_name RrWorldGen
 extends RefCounted
 
@@ -12,9 +13,9 @@ extends RefCounted
 
 const SAMPLE_STEP: float = 2.0
 const ROW_STEP: float = 3.0
-const STRIP_CHUNK: float = 100.0
+const STRIP_CHUNK: float = 200.0  # draw budget: fewer, longer ground chunks
 const FAR_STEP: float = 12.0
-const FAR_CHUNK: float = 300.0
+const FAR_CHUNK: float = 600.0
 const FAR_PAD: float = 420.0
 ## Lateral offsets past the track edge for the strip, per world (m).
 const OUT_W1: Array[float] = [0.25, 0.7, 1.3, 2.1, 3.2, 4.6, 6.5, 9.0, 12.0, 16.0, 21.0, 27.0, 34.0]
@@ -45,6 +46,11 @@ const OUT_W2: Array[float] = [
 	44.0
 ]
 const IN_LATS: Array[float] = [-1.0, -0.75, -0.45, -0.2, 0.0, 0.2, 0.45, 0.75, 1.0]
+## W5 split path: finer columns across the trail so the river dips under the
+## bridge route and the island rises between the routes.
+const IN_LATS_FINE: Array[float] = [
+	-1.0, -0.85, -0.7, -0.55, -0.4, -0.25, -0.1, 0.0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 1.0
+]
 
 var track: RrTrack
 var world: int = 1
@@ -66,6 +72,11 @@ var _noise2 := FastNoiseLite.new()
 var _patch := FastNoiseLite.new()
 var _rng := RandomNumberGenerator.new()
 var _prop_buf: Dictionary = {}
+## Circles (x, z, radius) kept clear of scatter props by the landmarks.
+var _keep_out: Array[Vector3] = []
+## Worlds 3-6 heights and scenery, and every world's landmarks.
+var _w36: RrWorldGen36
+var _lm: RrLandmarks
 
 
 func build(trk: RrTrack) -> void:
@@ -88,17 +99,21 @@ func build(trk: RrTrack) -> void:
 		_sz.append(c.z)
 		_ss.append(s)
 		s += SAMPLE_STEP
+	_w36 = RrWorldGen36.new(self)
+	_lm = RrLandmarks.new(self)
 	_strip()
 	_far()
 	_lanes()
 	if track.river.x >= 0.0:
 		_river()
+	_w36.water()
+	_lm.place()
 	_scenery()
 	build_ms = Time.get_ticks_msec() - t0
 
 
 func _outs() -> Array[float]:
-	return OUT_W2 if world == 2 else OUT_W1
+	return OUT_W1 if world == 1 or world == 5 else OUT_W2
 
 
 ## Per-track scenery knob (tools/track_gen.py flavor), default = track 1.
@@ -167,6 +182,8 @@ static func _sm(a: float, b: float, x: float) -> float:
 
 ## Ground height at (s, lat) for world x/z (DESIGN 9 forest, 10 canyon).
 func height(s: float, lat: float, x: float, z: float) -> float:
+	if world >= 3:
+		return _w36.height(s, lat, x, z)
 	if world == 2:
 		return _height_w2(s, lat, x, z)
 	return _height_w1(s, lat, x, z)
@@ -194,6 +211,13 @@ func _height_w1(s: float, lat: float, x: float, z: float) -> float:
 		var k2: float = _sm(track.tunnel.x - 10.0, track.tunnel.x, s)
 		k2 *= 1.0 - _sm(track.tunnel.y, track.tunnel.y + 10.0, s)
 		h += k2 * _sm(0.6, 3.5, off) * (7.0 + _noise2.get_noise_2d(x, z) * 2.0)
+	for i: int in track.kickers.size():
+		if track.kicker_models[i] == "world1/river_bridge":
+			# DESIGN 9a: a stream crosses under the bridge (its abutments go
+			# 3.2 m down), so the ground dips across the whole width.
+			var c: float = track.kickers[i]
+			var k3: float = 1.0 - _sm(5.0, 10.5, absf(s - c))
+			h = lerpf(h, minf(h, th - 3.0 - _sm(0.0, 30.0, off) * 0.5), k3)
 	return h
 
 
@@ -279,7 +303,7 @@ func _splat(s: float, lat: float, x: float, z: float, slope: float) -> Color:
 	var d: float = absf(lat)
 	var edge: float = 0.9 + _noise2.get_noise_2d(x * 2.0, z * 2.0) * 0.6
 	var trail: float = 1.0 - _sm(hw - 0.4, hw + edge, d)
-	if track.is_smooth(s) or track.in_gap(s):
+	if (track.is_smooth(s) and not track.in_split(s)) or track.in_gap(s):
 		trail = 0.0
 	var rock: float = _sm(0.32, 0.62, slope)
 	var patch: float = 0.0
@@ -287,6 +311,8 @@ func _splat(s: float, lat: float, x: float, z: float, slope: float) -> Color:
 	if world == 1:
 		patch = _sm(0.12, 0.38, _patch.get_noise_2d(x, z)) * _sm(1.5, 4.0, d - hw)
 		verge = _sm(hw - 0.3, hw + 0.4, d) * (1.0 - _sm(2.5 + edge * 2.0, 6.0 + edge * 2.0, d - hw))
+	elif world >= 3:
+		return _w36.splat(s, lat, x, z, slope, trail, rock, edge)
 	else:
 		verge = _sm(hw - 0.2, hw + 0.6, d) * (1.0 - _sm(1.5, 5.0 + edge * 3.0, d - hw)) * 0.8
 	return Color(trail, rock, patch, verge)
@@ -300,7 +326,7 @@ func _strip() -> void:
 	var lats: Array[float] = []
 	for i: int in range(outs.size() - 1, -1, -1):
 		lats.append(-(1.0 + 0.0) * 99.0 - outs[i])
-	for v: float in IN_LATS:
+	for v: float in IN_LATS_FINE if track.split.size() >= 4 else IN_LATS:
 		lats.append(v)
 	for o: float in outs:
 		lats.append(99.0 + o)
@@ -472,7 +498,9 @@ func _commit(
 		arr[Mesh.ARRAY_TEX_UV2] = uv2
 	arr[Mesh.ARRAY_INDEX] = idx
 	var m := ArrayMesh.new()
-	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	m.add_surface_from_arrays(
+		Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES
+	)
 	return m
 
 
@@ -495,6 +523,8 @@ func _lanes() -> void:
 	var prev_row: int = -1
 	while s <= track.s_max:
 		var smooth: bool = track.is_smooth(s) or track.is_smooth(s - ROW_STEP)
+		# W5 split path: no ribbon over the river, the island and the ford.
+		smooth = smooth and not track.in_split(s + 6.0) and not track.in_split(s - 6.0)
 		if smooth:
 			if not started:
 				started = true
@@ -615,8 +645,15 @@ func ground_at(s: float, lat: float) -> Vector3:
 func _put(kind: String, chunk_m: float, s: float, xf: Transform3D) -> void:
 	var key: String = "%s|%d" % [kind, floori(s / chunk_m)]
 	if not _prop_buf.has(key):
-		_prop_buf[key] = [kind, [], chunk_m]
+		_prop_buf[key] = [kind, [], chunk_m, []]
 	(_prop_buf[key][1] as Array).append(xf)
+
+
+## A prop with a colour per instance ("col_" kinds: the W6 containers).
+func put_c(kind: String, chunk_m: float, s: float, xf: Transform3D, col: Color) -> void:
+	_put(kind, chunk_m, s, xf)
+	var key: String = "%s|%d" % [kind, floori(s / chunk_m)]
+	(_prop_buf[key][3] as Array).append(col)
 
 
 func _yaw_xf(p: Vector3, yaw: float, sc: Vector3) -> Transform3D:
@@ -627,6 +664,11 @@ func _free_spot(s: float, lat: float) -> bool:
 	var hw: float = track.width(s) * 0.5
 	if absf(lat) < hw + 0.2:
 		return false
+	if not _keep_out.is_empty():
+		var wp: Vector3 = track.world_point(s, lat)
+		for c: Vector3 in _keep_out:
+			if Vector2(wp.x - c.x, wp.z - c.y).length() < c.z:
+				return false
 	if track.river.x >= 0.0 and s > track.river.x - 6.0 and s < track.river.y + 6.0:
 		if absf(lat - 17.0) < 8.5:
 			return false
@@ -640,7 +682,9 @@ func _free_spot(s: float, lat: float) -> bool:
 
 
 func _scenery() -> void:
-	if world == 2:
+	if world >= 3:
+		_w36.scenery()
+	elif world == 2:
 		_scenery_w2()
 	else:
 		_scenery_w1()
@@ -649,8 +693,11 @@ func _scenery() -> void:
 	for key: String in _prop_buf:
 		var e: Array = _prop_buf[key]
 		var list: Array = e[1]
+		var cols: Array = e[3]
+		# 12 floats per instance, 16 with a colour (MultiMesh use_colors).
+		var stride: int = 16 if not cols.is_empty() else 12
 		var buf := PackedFloat32Array()
-		buf.resize(list.size() * 12)
+		buf.resize(list.size() * stride)
 		var ctr := Vector3.ZERO
 		for i: int in list.size():
 			var xf: Transform3D = list[i]
@@ -659,8 +706,11 @@ func _scenery() -> void:
 			var row := PackedFloat32Array(
 				[b.x.x, b.y.x, b.z.x, o.x, b.x.y, b.y.y, b.z.y, o.y, b.x.z, b.y.z, b.z.z, o.z]
 			)
-			for k: int in 12:
-				buf[i * 12 + k] = row[k]
+			if stride == 16:
+				var c: Color = cols[i]
+				row.append_array(PackedFloat32Array([c.r, c.g, c.b, c.a]))
+			for k: int in stride:
+				buf[i * stride + k] = row[k]
 			ctr += o
 		props.append([e[0], buf, ctr / float(maxi(1, list.size()))])
 	_prop_buf.clear()
@@ -693,7 +743,7 @@ func _scenery_w1() -> void:
 		p.y -= 0.2
 		var sc: float = _rng.randf_range(0.7, 1.2)
 		var kind: String = kinds[_rng.randi() % 3]
-		var chunk: float = 40.0 if off < 45.0 else 300.0
+		var chunk: float = 80.0 if off < 45.0 else 300.0
 		_put(
 			("near_" if off < 45.0 else "far_") + kind,
 			chunk,
@@ -721,6 +771,8 @@ func _scenery_w2() -> void:
 		if track.in_gap(s) or not _free_spot(s, lat):
 			continue
 		var p: Vector3 = ground_at(s, lat)
+		if p.y - track.center(s).y > 0.9:
+			continue  # on the canyon wall: these cards floated as dark clumps
 		var sc: float = _rng.randf_range(0.6, 1.3)
 		_put("bush_desert", 100.0, s, _yaw_xf(p, _rng.randf() * TAU, Vector3.ONE * sc))
 		n += 1
@@ -796,7 +848,7 @@ func _edge_props(w: int) -> void:
 						var gs: float = _rng.randf_range(0.7, 1.3)
 						_put(
 							"grass_card",
-							25.0,
+							50.0,
 							ss,
 							_yaw_xf(
 								gp,
@@ -809,7 +861,7 @@ func _edge_props(w: int) -> void:
 					if _free_spot(s, fl):
 						_put(
 							"fern",
-							25.0,
+							50.0,
 							s,
 							_yaw_xf(
 								ground_at(s, fl),
@@ -847,27 +899,13 @@ func _edge_props(w: int) -> void:
 						sp.y -= 0.1
 						var sr: float = _rng.randf_range(0.18, 0.45)
 						_put(
-							"srock_rock_c",
-							150.0,
+							"st_srock_rock_c",  # one draw with the streamer stones
+							100.0,
 							s,
 							_yaw_xf(sp, _rng.randf() * TAU, Vector3.ONE * sr)
 						)
 		s += 2.0
-	if w == 1 and track.tunnel.x >= 0.0:
-		# Rock cut: big boulders on both sides of the tunnel section.
-		var t: float = track.tunnel.x - 6.0
-		while t < track.tunnel.y + 6.0:
-			for side2: float in [-1.0, 1.0]:
-				var hw2: float = track.width(t) * 0.5
-				var bp: Vector3 = ground_at(t, side2 * (hw2 + 2.2))
-				var bs: float = _rng.randf_range(1.6, 2.6)
-				_put(
-					["rock_a", "rock_b"][_rng.randi() % 2],
-					100.0,
-					t,
-					_yaw_xf(bp, _rng.randf() * TAU, Vector3(bs, bs * 1.5, bs))
-				)
-			t += 3.5
+	# The W1 rock tunnel is a closed lining now (RrLandmarks), no boulders.
 
 
 ## GDD 11.1 roadside streamers: close props 1-3 m off the rail on both sides
@@ -884,8 +922,10 @@ func _streamers(w: int) -> void:
 			var ok: bool = _free_spot(s, lat) and not track.in_gap(s)
 			if w == 2 and side < 0.0 and _on_rim(s):
 				ok = false  # the rim drop-off: nothing to stand on
+			var p: Vector3 = ground_at(s, lat)
+			if ok and w == 2 and p.y - track.center(s).y > 0.9:
+				ok = false  # slot-canyon wall: no brush clinging to the rock face
 			if ok:
-				var p: Vector3 = ground_at(s, lat)
 				var yaw: float = _rng.randf() * TAU
 				var stone: bool = _rng.randf() < (0.25 if w == 1 else 0.3)
 				if stone:
@@ -906,6 +946,78 @@ func _streamers(w: int) -> void:
 func _on_rim(s: float) -> bool:
 	var lr: Vector2 = _lane_range()
 	return lr.x >= 0.0 and s > lr.x + 6.0 and s < lr.y - 6.0
+
+
+# ---------------------------------------------------------------- shared helpers
+
+
+## Scatter/landmark helpers for RrWorldGen36 and RrLandmarks.
+func put(kind: String, chunk_m: float, s: float, xf: Transform3D) -> void:
+	_put(kind, chunk_m, s, xf)
+
+
+func yaw_xf(p: Vector3, yaw: float, sc: Vector3) -> Transform3D:
+	return _yaw_xf(p, yaw, sc)
+
+
+func free_spot(s: float, lat: float) -> bool:
+	return _free_spot(s, lat)
+
+
+## Keep scatter props out of a circle round a landmark (world x/z, metres).
+func keep_out(p: Vector3, r: float) -> void:
+	_keep_out.append(Vector3(p.x, p.z, r))
+
+
+func rng() -> RandomNumberGenerator:
+	return _rng
+
+
+func noise(x: float, z: float) -> float:
+	return _noise.get_noise_2d(x, z)
+
+
+func noise2(x: float, z: float) -> float:
+	return _noise2.get_noise_2d(x, z)
+
+
+func patch_noise(x: float, z: float) -> float:
+	return _patch.get_noise_2d(x, z)
+
+
+static func sm(a: float, b: float, x: float) -> float:
+	return _sm(a, b, x)
+
+
+## A flat water strip along the track from s0 to s1 between two lateral
+## offsets, y = centre height + dy (minus the positive lifts).
+func add_water(s0: float, s1: float, lat0: float, lat1: float, dy: float, step: float) -> void:
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	var idx := PackedInt32Array()
+	var s: float = s0
+	while s <= s1 + 0.01:
+		var y: float = track.center(s).y - maxf(0.0, track.lift_at(s)) + dy
+		var row: int = verts.size()
+		for lat: float in [lat0, lat1]:
+			var p: Vector3 = track.world_point(s, lat)
+			p.y = y
+			verts.append(p)
+			norms.append(Vector3.UP)
+		if row > 0:
+			var a: int = row - 2
+			idx.append_array(PackedInt32Array([a, row, row + 1, a, row + 1, a + 1]))
+		s += step
+	if idx.is_empty():
+		return
+	var arr: Array = []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
+	arr[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	water.append([m, verts[verts.size() / 2]])
 
 
 ## Everything the bake stores.
