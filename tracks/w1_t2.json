@@ -26,7 +26,11 @@
   "tunnel": [150.0, 210.0],
   "fence": [1127.0, 1208.0],
   "river": [497.0, 887.0],
-  "zones": {"lane": [503.0, 881.0], "mesa": 881.0, "town": 1345.0},
+  "hops": [],
+  "rings": [],
+  "split": [],
+  "lifts": [],
+  "zones": {"lane": [503.0, 881.0], "mesa": 881.0, "town": 1345.0, "sig": [1130.0, 1345.0], "lip": 1190.0},
   "flavor": {"seed": 6544, "trees": 0.92, "reach": 44.3, "hills": 5.2, "meadow": 0.23},
   "recipe": [["start", false, 90.0], ["landmark", true, 151.0], ["pad_a", true, 101.0], ["chain", true, 131.0], ["gate_in", false, 60.0], ["mud_lane", true, 165.0], ["kick_m", true, 153.0], ["gate_out", false, 60.0], ["pad_a", true, 95.0], ["kick_s", true, 124.0], ["signature", false, 215], ["finish", false, 105.0]]
 }

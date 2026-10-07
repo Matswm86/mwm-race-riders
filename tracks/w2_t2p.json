@@ -26,7 +26,11 @@
   "tunnel": [],
   "fence": [],
   "river": [],
-  "zones": {"lane": [514.0, 914.0], "mesa": 914.0, "town": 1375.0, "slot": [338.0, 470.0]},
+  "hops": [],
+  "rings": [],
+  "split": [],
+  "lifts": [],
+  "zones": {"lane": [514.0, 914.0], "mesa": 914.0, "town": 1375.0, "slot": [338.0, 470.0], "sig": [1163.0, 1375.0], "lip": 1223.0},
   "flavor": {"seed": 2001, "wall": 13.8, "bush": 0.89, "rocks": 0.9, "strata": 3.95, "dune": 1.42},
   "recipe": [["start", false, 90.0], ["chain", false, 126.0], ["kick_s", false, 122.0], ["landmark", true, 146.0], ["gate_in", false, 60.0], ["bend_s", true, 177.0], ["weed_pair", true, 163.0], ["gate_out", false, 60.0], ["pad_a", true, 95.0], ["kick_s", false, 124.0], ["signature", true, 212], ["finish", false, 120.0]],
   "pro_added": [["patch", [1375.0, 1397.0, 1.8, 4.5, "sand"]], ["patch", [1165.0, 1187.0, -4.5, -1.8, "sand"]]]

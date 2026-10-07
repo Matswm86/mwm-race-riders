@@ -20,9 +20,16 @@ that never comes back near itself.
 Seeds are fixed: seed = crc32("rr_w{w}_t{k}") (a stable stand-in for the GDD's hash()), so the
 same 20 candidates come out on every machine.
 
+Worlds 3-6 (DESIGN 11, owner 10-07) have no hand-made track 1: all 8 of their tracks come from
+their kits. Their kits add the new pieces of GDD 6.0: Hop hindrances (W4 lava-crust ridges, W5
+logs), the W4 steam-vent kicker that only launches while it puffs, the W5 split path (a narrow
+bridge route and a wide ford route either side of an island), W6 air rings over the jumps and the
+W6 container-stack ramp (a "lifts" table raises the centre line). Lengths: WORLD_LENGTH + STEP[w]
+x (k - 1), with smaller steps for the long worlds so an idle Lett child finishes inside 51 s.
+
 Usage:
   python3 tools/track_gen.py --list 1 3     # the 20 valid layouts for world 1 track 3
-  python3 tools/track_gen.py --write        # write tracks/w{1,2}_t{2..8}.json + all Pro variants
+  python3 tools/track_gen.py --write        # write tracks/w{1..6}_t{k}.json + all Pro variants
 Picks and hand tuning live in tools/track_picks.json ({"w1_t3": {"pick": 4, "bend_scale": 1.1,
 "flavor_seed": 9}}); a track without an entry gets the candidate most different from the
 tracks already picked in its world. Pro variants (GDD 17.1): the base track mirrored (x -> -x,
@@ -45,8 +52,12 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "tracks"
 PICKS = Path(__file__).resolve().parent / "track_picks.json"
 
-WORLD_LENGTH = {1: 1425.0, 2: 1470.0}
-LENGTH_STEP = 25.0
+WORLD_LENGTH = {1: 1425.0, 2: 1470.0, 3: 1500.0, 4: 1470.0, 5: 1500.0, 6: 1575.0}
+LENGTH_STEP = {1: 25.0, 2: 25.0, 3: 20.0, 4: 25.0, 5: 20.0, 6: 10.0}  # = RrBalance.TRACK_STEP_W
+WORLDS = (1, 2, 3, 4, 5, 6)
+HAND_MADE_T1 = (1, 2)  # worlds whose track 1 is the RrWorlds table (tests/export_t1.gd)
+GRAVITY = 22.0
+KICKER_LIP = 1.15
 TRACKS = 8
 CANDIDATES = 20
 S_TAIL = 155.0  # s_max = length + 155 (run-out 90 m plus margin)
@@ -70,6 +81,13 @@ def landing(lip: float, air: float) -> tuple[float, float]:
     return lip + 18.0 * air - 3.0, lip + 48.0 * air + 5.0
 
 
+def ring_over(lip: float, air: float, x: float = 0.0, h0: float = KICKER_LIP) -> list[float]:
+    """W6 air ring at the apex of a jump at cruise (30 m/s): [s, x, h above the centre]."""
+    vy = (GRAVITY * air * air * 0.5 - h0) / air
+    t = vy / GRAVITY
+    return [round(lip + 30.0 * t, 1), x, round(h0 + vy * vy / (2.0 * GRAVITY), 2)]
+
+
 def piece(name: str, length: tuple[float, float], **kw) -> dict:
     d = {
         "name": name,
@@ -89,6 +107,12 @@ def piece(name: str, length: tuple[float, float], **kw) -> dict:
         "gap": None,
         "drop": None,
         "no_lane": False,
+        "hops": [],
+        "rings": [],
+        "split": None,
+        "lifts": [],
+        "zone": None,
+        "wide": [],
     }
     d.update(kw)
     return d
@@ -237,6 +261,238 @@ KITS: dict[int, dict[str, dict]] = {
         "finish": piece("finish", (120, 120), kick=[(45, 0.8, "ramp")]),
     },
 }
+# Worlds 3-6 (GDD 6.0 hindrances, DESIGN 11 models). Pieces mirror the W1/W2 kits so the
+# recipe solver and the rules are the same; each world brings its own hindrances, landmark
+# and signature.
+_R3 = "world3/ramp_snow"
+_R6 = "world6/ramp_steel"
+KITS[3] = {
+    "start": piece("start", (90, 90)),
+    "gate_in": piece("gate_in", (60, 60), gate=(30.0, 1)),
+    "gate_out": piece("gate_out", (60, 60), gate=(30.0, 0)),
+    "pad_a": piece("pad_a", (90, 150), pads=[(45, 0.0)], bends=[(15, 95, 1 / 280)]),
+    "pad_b": piece(
+        "pad_b", (100, 170), pads=[(40, 3.0)], rollers=[(95, -1.0)], bends=[(10, 120, -1 / 220)]
+    ),
+    "chain": piece(
+        "chain",
+        (125, 180),
+        pads=[(45, -2.5), (63, -2.5), (81, -2.5)],
+        kid=[(0, 0.0), (30, -2.5), (90, -2.5), (120, 0.0)],
+        bends=[(95, 170, 1 / 300)],
+    ),
+    "bend_s": piece(
+        "bend_s",
+        (155, 210),
+        bends=[(10, 80, 1 / 120), (90, 160, -1 / 140)],
+        pads=[(45, 0.0)],
+        patches=[(115, 129, 2.0, 4.5, "ice")],
+    ),
+    "sweeper": piece(
+        "sweeper", (130, 200), bends=[(10, 135, -1 / 230)], rollers=[(70, 1.0)], pads=[(115, -3.0)]
+    ),
+    "kick_s": piece("kick_s", (120, 165), kick=[(25, 1.0, _R3)]),
+    "kick_m": piece("kick_m", (130, 175), kick=[(25, 1.2, _R3)], pads=[(105, 3.0)]),
+    "ice_lane": piece(
+        "ice_lane",
+        (130, 180),
+        patches=[(55, 69, -4.0, -1.2, "ice")],
+        kid=[(0, 0.0), (5, 0.0), (32, 2.5), (85, 2.5), (112, 0.0)],
+    ),
+    "drift_lane": piece(
+        "drift_lane",
+        (140, 190),
+        patches=[(60, 75, 0.2, 4.2, "snow")],
+        kid=[(0, 0.0), (5, 0.0), (32, -2.5), (93, -2.5), (120, 0.0)],
+        pads=[(135, 0.0)],
+    ),
+    # Landmark: a pass between blue seracs (narrow), the glacier hut beside it.
+    "landmark": piece(
+        "landmark",
+        (145, 190),
+        narrow=[(12, 120, 8.0)],
+        zone=("seracs", 0, 132),
+        rollers=[(60, 1.0)],
+        pads=[(98, -2.0)],
+    ),
+    # Signature: ride through the blue ice cave and launch out of its mouth over a 14 m
+    # crevasse (1.6 s), landing 6 m lower.
+    "signature": piece(
+        "signature",
+        (205, 235),
+        narrow=[(14, 64, 9.0)],
+        tunnel=(36, 60),
+        kick=[(60, 1.6, _R3)],
+        gap=(63, 77),
+        drop=(62, 100, 6.0),
+        pads=[(150, -3.0), (168, -3.0), (186, -3.0)],
+    ),
+    "finish": piece("finish", (105, 105), kick=[(30, 1.0, _R3)]),
+}
+KITS[4] = {
+    "start": piece("start", (90, 90)),
+    "gate_in": piece("gate_in", (60, 60), gate=(30.0, 1)),
+    "gate_out": piece("gate_out", (60, 60), gate=(30.0, 0)),
+    "pad_a": piece("pad_a", (90, 150), pads=[(45, 0.0)], bends=[(15, 100, 1 / 160)]),
+    "pad_b": piece(
+        "pad_b", (100, 170), pads=[(40, 3.0)], rollers=[(95, -1.0)], bends=[(10, 120, -1 / 200)]
+    ),
+    "chain": piece(
+        "chain",
+        (125, 180),
+        pads=[(45, 2.5), (63, 2.5), (81, 2.5)],
+        kid=[(0, 0.0), (30, 2.5), (90, 2.5), (120, 0.0)],
+        bends=[(95, 170, -1 / 300)],
+    ),
+    "bend_s": piece(
+        "bend_s",
+        (155, 210),
+        bends=[(10, 85, -1 / 130), (95, 165, 1 / 150)],
+        pads=[(45, 0.0)],
+        patches=[(115, 130, 2.0, 4.5, "ash")],
+    ),
+    "sweeper": piece(
+        "sweeper", (130, 200), bends=[(10, 135, 1 / 240)], hops=[70], pads=[(115, -3.0)]
+    ),
+    "kick_s": piece("kick_s", (120, 165), kick=[(25, 1.0, "ramp_rock")]),
+    "kick_m": piece("kick_m", (130, 175), kick=[(25, 1.2, "ramp_rock")], pads=[(105, -3.0)]),
+    "dune_lane": piece(
+        "dune_lane",
+        (130, 180),
+        patches=[(60, 75, -4.2, -0.2, "ash")],
+        kid=[(0, 0.0), (5, 0.0), (32, 2.5), (93, 2.5), (120, 0.0)],
+    ),
+    "rock_pair": piece(
+        "rock_pair", (140, 190), rollers=[(35, -1.0), (95, -1.0)], pads=[(135, 0.0)]
+    ),
+    # Landmark: cooled lava glowing in a basin left of the track, behind a steel rail
+    # (lava only behind rails, GDD 6.0); the research station on the right.
+    "landmark": piece(
+        "landmark",
+        (145, 190),
+        zone=("lava", 5, 150),
+        pads=[(70, 2.0)],
+        hops=[115],
+    ),
+    # Signature: the steam vent (1.4 s) launches a rider on the mound while it puffs.
+    "signature": piece(
+        "signature",
+        (210, 240),
+        narrow=[(20, 66, 8.0)],
+        kick=[(60, 1.4, "vent")],
+        pads=[(150, -3.0), (168, -3.0), (186, -3.0)],
+    ),
+    "finish": piece("finish", (105, 105), kick=[(30, 1.0, "ramp_rock")]),
+}
+KITS[5] = {
+    "start": piece("start", (90, 90)),
+    "gate_in": piece("gate_in", (60, 60), gate=(30.0, 1)),
+    "gate_out": piece("gate_out", (60, 60), gate=(30.0, 0)),
+    "pad_a": piece("pad_a", (90, 150), pads=[(45, 0.0)], bends=[(15, 95, -1 / 200)]),
+    "pad_b": piece(
+        "pad_b", (100, 170), pads=[(40, -3.0)], blocks=[(95, 2.5)], bends=[(10, 120, 1 / 240)]
+    ),
+    "chain": piece(
+        "chain",
+        (125, 180),
+        pads=[(45, 2.5), (63, 2.5), (81, 2.5)],
+        kid=[(0, 0.0), (30, 2.5), (90, 2.5), (120, 0.0)],
+        bends=[(95, 175, -1 / 280)],
+    ),
+    "bend_s": piece(
+        "bend_s", (155, 210), bends=[(10, 75, -1 / 100), (85, 150, 1 / 100)], hops=[115]
+    ),
+    "sweeper": piece("sweeper", (130, 200), bends=[(10, 135, 1 / 220)], blocks=[(60, -2.0)]),
+    "kick_s": piece("kick_s", (110, 165), kick=[(25, 1.0, "ramp")]),
+    "kick_m": piece("kick_m", (115, 175), kick=[(25, 1.2, "ramp")]),
+    "log_lane": piece("log_lane", (130, 180), hops=[35, 100], bends=[(20, 120, -1 / 380)]),
+    "branch_lane": piece(
+        "branch_lane", (130, 180), blocks=[(35, 2.5), (95, -2.5)], bends=[(20, 120, 1 / 400)]
+    ),
+    # Landmark: the split path (GDD 6.0). The narrow rope-bridge route (left, 1 pad) and the
+    # wide ford route (right, 3 pads, the ford slows the bike) run either side of an island
+    # over the river; equal length. The kid line takes the bridge.
+    "landmark": piece(
+        "landmark",
+        (235, 270),
+        wide=[(50, 180, 13.0)],
+        split=(55, 175, -2.1, 0.4),
+        kid=[(0, 0.0), (5, 0.0), (50, -4.3), (180, -4.3), (225, 0.0)],
+        pads=[(83, 3.4), (105, -4.3), (129, 3.4), (155, 3.4)],
+        patches=[(106, 124, 0.4, 6.5, "ford")],
+        zone=("split", 55, 175),
+    ),
+    # Signature: launch off the waterfall lip into the pool below (1.8 s), landing 8.4 m lower.
+    "signature": piece(
+        "signature",
+        (200, 235),
+        narrow=[(30, 66, 7.0)],
+        kick=[(60, 1.8, "ramp_rock")],
+        gap=(62, 87),
+        drop=(61, 111, 8.4),
+        pads=[(160, -3.0), (178, -3.0), (196, -3.0)],
+    ),
+    "finish": piece("finish", (105, 105), kick=[(30, 1.0, "ramp")]),
+}
+KITS[6] = {
+    "start": piece("start", (90, 90)),
+    "gate_in": piece("gate_in", (60, 60), gate=(30.0, 1)),
+    "gate_out": piece("gate_out", (60, 60), gate=(30.0, 0)),
+    "pad_a": piece("pad_a", (90, 150), pads=[(45, 0.0)], bends=[(15, 100, 1 / 220)]),
+    "pad_b": piece(
+        "pad_b", (100, 170), pads=[(40, 3.0)], blocks=[(95, -2.5)], bends=[(10, 120, -1 / 240)]
+    ),
+    "chain": piece(
+        "chain",
+        (125, 180),
+        pads=[(45, -2.5), (63, -2.5), (81, -2.5)],
+        kid=[(0, 0.0), (30, -2.5), (90, -2.5), (120, 0.0)],
+        bends=[(95, 170, 1 / 320)],
+    ),
+    "bend_s": piece(
+        "bend_s",
+        (155, 210),
+        bends=[(10, 85, 1 / 140), (95, 165, -1 / 160)],
+        pads=[(45, 0.0)],
+        patches=[(115, 122, 2.0, 4.6, "steel")],
+    ),
+    "sweeper": piece(
+        "sweeper", (130, 200), bends=[(10, 135, -1 / 260)], rollers=[(70, 1.0)], pads=[(115, -3.0)]
+    ),
+    "kick_s": piece("kick_s", (120, 165), kick=[(25, 1.0, _R6)], rings=[ring_over(25, 1.0)]),
+    "kick_m": piece(
+        "kick_m", (130, 175), kick=[(25, 1.2, _R6)], rings=[ring_over(25, 1.2)], pads=[(105, 3.0)]
+    ),
+    "cone_lane": piece(
+        "cone_lane", (130, 180), blocks=[(35, 2.5), (95, -2.5)], bends=[(20, 120, -1 / 400)]
+    ),
+    "spool_pair": piece(
+        "spool_pair", (140, 190), rollers=[(35, 1.0), (95, -1.0)], pads=[(135, 0.0)]
+    ),
+    # Landmark: a canyon of container stacks (narrow), a roller spool and a pad.
+    "landmark": piece(
+        "landmark",
+        (145, 190),
+        narrow=[(12, 120, 8.0)],
+        zone=("containers", 0, 132),
+        rollers=[(60, 1.0)],
+        pads=[(98, 2.0)],
+    ),
+    # Signature: the crane jump. Up the steel ramp onto four containers, along their roofs,
+    # off the lip (2.0 s) under the gantry crane's boom and its air ring, over the water
+    # channel, landing 1 m below the quay start.
+    "signature": piece(
+        "signature",
+        (215, 245),
+        narrow=[(24, 66, 9.0)],
+        lifts=[(29.0, 0.0), (45.0, 2.6), (60.0, 2.6), (63.0, 2.6), (90.0, -1.0)],
+        kick=[(60, 2.0, "-stack")],
+        rings=[ring_over(60, 2.0)],
+        gap=(63, 85),
+        pads=[(168, -3.0), (186, -3.0), (204, -3.0)],
+    ),
+    "finish": piece("finish", (110, 110), kick=[(30, 1.0, _R6)], rings=[ring_over(30, 1.0)]),
+}
 FIXED = ("start", "gate_in", "gate_out", "signature", "finish")
 
 # Per world: section widths, grades, start drop (GDD 6.1 / 6.2 numbers).
@@ -267,6 +523,58 @@ WORLD = {
         "g_finish": 0.06,
         "finish_at": 120.0,
     },
+    3: {
+        "start_w": [(-60.0, 12.0), (0.0, 12.0), (90.0, 11.0)],
+        "w_pre": 11.0,
+        "w_lane": 11.0,
+        "w_post": 10.0,
+        "g_start": (90.0, 0.18),
+        "g_pre": 0.09,
+        "g_lane": 0.06,
+        "g_post": 0.16,
+        "g_after_sig": 0.12,
+        "g_finish": 0.05,
+        "finish_at": 105.0,
+    },
+    4: {
+        "start_w": [(-60.0, 12.0), (0.0, 12.0), (90.0, 10.0)],
+        "w_pre": 10.0,
+        "w_lane": 10.0,
+        "w_post": 9.0,
+        "g_start": (90.0, 0.16),
+        "g_pre": 0.10,
+        "g_lane": 0.07,
+        "g_post": 0.18,
+        "g_after_sig": 0.12,
+        "g_finish": 0.05,
+        "finish_at": 105.0,
+    },
+    5: {
+        "start_w": [(-60.0, 12.0), (0.0, 12.0), (90.0, 10.0)],
+        "w_pre": 10.0,
+        "w_lane": 10.0,
+        "w_post": 9.0,
+        "g_start": (90.0, 0.12),
+        "g_pre": 0.07,
+        "g_lane": 0.05,
+        "g_post": 0.14,
+        "g_after_sig": 0.10,
+        "g_finish": 0.04,
+        "finish_at": 105.0,
+    },
+    6: {
+        "start_w": [(-60.0, 12.0), (0.0, 12.0), (90.0, 11.0)],
+        "w_pre": 11.0,
+        "w_lane": 12.0,
+        "w_post": 10.0,
+        "g_start": (90.0, 0.05),
+        "g_pre": 0.03,
+        "g_lane": 0.02,
+        "g_post": 0.04,
+        "g_after_sig": 0.03,
+        "g_finish": 0.02,
+        "finish_at": 110.0,
+    },
 }
 
 
@@ -285,6 +593,10 @@ def mirror_piece(p: dict) -> dict:
     q["rollers"] = [(s, -d) for s, d in p["rollers"]]
     q["kid"] = [(s, -x) for s, x in p["kid"]]
     q["bends"] = [(a, b, -c) for a, b, c in p["bends"]]
+    q["rings"] = [[rs, -rx, rh] for rs, rx, rh in p["rings"]]
+    if p["split"] is not None:
+        a, b, xa, xb = p["split"]
+        q["split"] = (a, b, -xb, -xa)
     return q
 
 
@@ -312,6 +624,12 @@ def assemble(w: int, k: int, seq: list[tuple[str, bool, float]], bend_scale: flo
         "gap": [],
         "drops": [],
         "spans": [],
+        "hops": [],
+        "rings": [],
+        "split": [],
+        "lifts": [],
+        "zones": {},
+        "wide": [],
     }
     for name, mir, ln in seq:
         p = kit[name]
@@ -346,6 +664,22 @@ def assemble(w: int, k: int, seq: list[tuple[str, bool, float]], bend_scale: flo
         if p["drop"] is not None:
             a, b, m = p["drop"]
             t["drops"].append([s0 + a, s0 + b, m])
+        for hs in p["hops"]:
+            t["hops"].append(s0 + hs)
+        for rs, rx, rh in p["rings"]:
+            t["rings"].append([round(s0 + rs, 1), rx, rh])
+        if p["split"] is not None:
+            a, b, xa, xb = p["split"]
+            t["split"] = [s0 + a, s0 + b, xa, xb]
+        for ls, ly in p["lifts"]:
+            t["lifts"].append([s0 + ls, ly])
+        if p["zone"] is not None:
+            zn, za, zb = p["zone"]
+            t["zones"][zn] = [s0 + za, s0 + zb]
+        for a, b, wn in p["wide"]:
+            t["wide"].append((s0 + a, s0 + b, wn))
+        if name == "signature":
+            t["zones"]["sig"] = [s0, s0 + ln]
         s0 += ln
     length = s0
     t["length"] = length
@@ -412,6 +746,14 @@ def width_at(w: int, t: dict, s: float) -> float:
             elif s > b:
                 k = ((b + 12.0) - s) / 12.0
             v = min(v, v + (wn - v) * k)
+    for a, b, wn in t.get("wide", []):
+        if a - 12.0 <= s <= b + 12.0:
+            k = 1.0
+            if s < a:
+                k = (s - (a - 12.0)) / 12.0
+            elif s > b:
+                k = ((b + 12.0) - s) / 12.0
+            v = max(v, v + (wn - v) * k)
     return v
 
 
@@ -482,6 +824,8 @@ def hindrances(t: dict) -> list[dict]:
         out.append({"s0": a, "s1": b, "x0": x0, "x1": x1, "kind": kd})
     for s, _d in t["rollers"]:
         out.append({"s0": s, "s1": s, "x0": -99.0, "x1": 99.0, "kind": "roller"})
+    for s in t.get("hops", []):
+        out.append({"s0": s - 0.8, "s1": s + 0.8, "x0": -99.0, "x1": 99.0, "kind": "hop"})
     out.sort(key=lambda h: h["s0"])
     return out
 
@@ -561,7 +905,7 @@ def validate(w: int, t: dict, base_rules: bool = True) -> list[str]:
             gap = b["s0"] - a["s1"]
             if gap < HIND_GAP:
                 errs.append(f"{a['kind']} {a['s0']:.0f} and {b['kind']} {b['s0']:.0f} {gap:.0f} m")
-            lanes = a["kind"] != "roller" and b["kind"] != "roller"
+            lanes = a["kind"] not in ("roller", "hop") and b["kind"] not in ("roller", "hop")
             if lanes and gap < HIND_LANE_GAP and a["x1"] > b["x0"] and b["x1"] > a["x0"]:
                 errs.append(f"same lane {a['s0']:.0f} / {b['s0']:.0f} only {gap:.0f} m")
     for s, _x in t["pads"]:
@@ -575,6 +919,17 @@ def validate(w: int, t: dict, base_rules: bool = True) -> list[str]:
         for (a, b), lip in zones:
             if lip - 5.0 < g < b:
                 errs.append(f"gate s {g:.0f} over the jump at {lip:.0f}")
+    if t.get("split"):
+        sa, sb = t["split"][0], t["split"][1]
+        for lip in t["kickers"]:
+            if sa - 20.0 < lip < sb + 20.0:
+                errs.append(f"kicker {lip:.0f} on the split path")
+        for g, _v in t["gates"]:
+            if sa - 20.0 < g < sb + 20.0:
+                errs.append(f"gate {g:.0f} on the split path")
+        for hs in t.get("hops", []):
+            if sa - 10.0 < hs < sb + 10.0:
+                errs.append(f"hop {hs:.0f} on the split path")
     # Kid line: ramps of at most 3 m per 30 m, clear of every block and patch.
     kl = t["kid_line"]
     for i in range(1, len(kl)):
@@ -747,6 +1102,37 @@ def random_groups(w: int, rng: random.Random) -> dict | None:
 
 
 def flavor(w: int, rng: random.Random) -> dict:
+    if w == 3:
+        return {
+            "seed": rng.randrange(1, 10_000),
+            "wall": round(rng.uniform(30.0, 42.0), 1),
+            "seracs": round(rng.uniform(0.75, 1.0), 2),
+            "rocks": round(rng.uniform(0.7, 1.0), 2),
+            "hills": round(rng.uniform(4.0, 9.0), 1),
+        }
+    if w == 4:
+        return {
+            "seed": rng.randrange(1, 10_000),
+            "wall": round(rng.uniform(34.0, 46.0), 1),
+            "rocks": round(rng.uniform(0.75, 1.0), 2),
+            "columns": round(rng.uniform(0.7, 1.0), 2),
+            "hills": round(rng.uniform(4.0, 10.0), 1),
+        }
+    if w == 5:
+        return {
+            "seed": rng.randrange(1, 10_000),
+            "trees": round(rng.uniform(0.8, 1.0), 2),
+            "reach": round(rng.uniform(34.0, 46.0), 1),
+            "hills": round(rng.uniform(4.0, 10.0), 1),
+            "plants": round(rng.uniform(0.8, 1.0), 2),
+        }
+    if w == 6:
+        return {
+            "seed": rng.randrange(1, 10_000),
+            "stacks": round(rng.uniform(0.75, 1.0), 2),
+            "quay": round(rng.uniform(13.0, 18.0), 1),
+            "lamp_step": round(rng.uniform(30.0, 34.0), 1),
+        }
     if w == 1:
         return {
             "seed": rng.randrange(1, 10_000),
@@ -768,7 +1154,7 @@ def flavor(w: int, rng: random.Random) -> dict:
 def candidates(w: int, k: int, bend_scale: float | None = None) -> list[dict]:
     seed = track_seed(w, k)
     rng = random.Random(seed)
-    target = WORLD_LENGTH[w] + LENGTH_STEP * (k - 1)
+    target = WORLD_LENGTH[w] + LENGTH_STEP[w] * (k - 1)
     out: list[dict] = []
     seen: set[str] = set()
     tries = 0
@@ -823,6 +1209,8 @@ def to_json(w: int, k: int, t: dict, pro: bool, fl: dict, recipe: list, seed: in
     zones = {"lane": [t["g1"], t["g2"]], "mesa": t["g2"], "town": t["finish_start"]}
     if t["slot"]:
         zones["slot"] = t["slot"]
+    zones.update(t.get("zones", {}))
+    zones["lip"] = t["sig_lip"]
     river = [t["g1"] - 6.0, t["g2"] + 6.0] if w == 1 else []
     d = {
         "id": w,
@@ -852,6 +1240,10 @@ def to_json(w: int, k: int, t: dict, pro: bool, fl: dict, recipe: list, seed: in
         "tunnel": t["tunnel"],
         "fence": t["fence"],
         "river": river,
+        "hops": [round(h, 1) for h in t.get("hops", [])],
+        "rings": t.get("rings", []),
+        "split": t.get("split", []),
+        "lifts": t.get("lifts", []),
         "zones": zones,
         "flavor": fl,
         "recipe": recipe,
@@ -878,6 +1270,10 @@ def mirror_track(t: dict) -> dict:
     m["rollers"] = sorted([[s, -d] for s, d in t["rollers"]])
     m["kid_line"] = [[s, -x if x else 0.0] for s, x in t["kid_line"]]
     m["bends"] = [[a, b, -c] for a, b, c in t["bends"]]
+    m["rings"] = [[rs, -rx if rx else 0.0, rh] for rs, rx, rh in t.get("rings", [])]
+    if t.get("split"):
+        a, b, xa, xb = t["split"]
+        m["split"] = [a, b, -xb, -xa]
     return m
 
 
@@ -889,15 +1285,38 @@ def add_pro_hindrances(w: int, t: dict, rng: random.Random, n: int = 2) -> list:
         options = []
         s = 70.0
         while s < t["length"] - 40.0:
+            sides = ((-4.5, -2.2), (2.2, 4.5))
+            # Worlds 1-2 draw exactly as before (their Pro tracks stay the same).
+            rdir = 1.0 if w >= 3 and rng.random() < 0.5 else -1.0
             if w == 1:
                 for x in (-3.0, 3.0):
                     options.append(("block", [s, x]))
-                for x0, x1 in ((-4.5, -2.2), (2.2, 4.5)):
+                for x0, x1 in sides:
                     options.append(("patch", [s, s + 15.0, x0, x1, "mud"]))
-            else:
+            elif w == 2:
                 options.append(("roller", [s, 1.0 if rng.random() < 0.5 else -1.0]))
                 for x0, x1 in ((-4.5, -1.8), (1.8, 4.5)):
                     options.append(("patch", [s, s + 22.0, x0, x1, "sand"]))
+            elif w == 3:
+                options.append(("roller", [s, rdir]))
+                for x0, x1 in sides:
+                    options.append(("patch", [s, s + 14.0, x0, x1, "ice"]))
+                    options.append(("patch", [s, s + 15.0, x0, x1, "snow"]))
+            elif w == 4:
+                options.append(("roller", [s, -1.0]))
+                options.append(("hop", s))
+                for x0, x1 in sides:
+                    options.append(("patch", [s, s + 15.0, x0, x1, "ash"]))
+            elif w == 5:
+                options.append(("hop", s))
+                for x in (-3.0, 3.0):
+                    options.append(("block", [s, x]))
+            else:
+                options.append(("roller", [s, rdir]))
+                for x in (-3.0, 3.0):
+                    options.append(("block", [s, x]))
+                for x0, x1 in sides:
+                    options.append(("patch", [s, s + 7.0, x0, x1, "steel"]))
             s += 5.0
         rng.shuffle(options)
         for kind, row in options:
@@ -909,11 +1328,18 @@ def add_pro_hindrances(w: int, t: dict, rng: random.Random, n: int = 2) -> list:
                 trial["blocks"] = sorted(trial["blocks"] + [row])
             elif kind == "patch":
                 trial["patches"] = sorted(trial["patches"] + [row])
+            elif kind == "hop":
+                trial["hops"] = sorted(trial.get("hops", []) + [row])
             else:
                 trial["rollers"] = sorted(trial["rollers"] + [row])
+            if t.get("split") and kind != "roller":
+                sa, sb = t["split"][0], t["split"][1]
+                at = row if kind == "hop" else row[0]
+                if sa - 20.0 < at < sb + 20.0:
+                    continue
             if not validate(w, trial, base_rules=False):
                 t.update(
-                    {k: trial[k] for k in ("blocks", "patches", "rollers")},
+                    {k: trial.get(k, []) for k in ("blocks", "patches", "rollers", "hops")},
                 )
                 added.append([kind, row])
                 break
@@ -923,7 +1349,7 @@ def add_pro_hindrances(w: int, t: dict, rng: random.Random, n: int = 2) -> list:
 def _clear_of_kid(t: dict, kind: str, row: list) -> bool:
     """Pro additions sit PRO_KID_CLEAR m clear of the kid line, so a nudge or a
     roller never pushes an idle Lett rider into them."""
-    if kind == "roller":
+    if kind in ("roller", "hop"):
         return True
     if kind == "block":
         s0, s1, x0, x1 = row[0] - 20.0, row[0] + 1.0, row[1] - 0.8, row[1] + 0.8
@@ -956,6 +1382,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--list", nargs=2, type=int, metavar=("WORLD", "TRACK"))
     ap.add_argument("--write", action="store_true")
+    ap.add_argument("--worlds", default="", help="comma list, default all six")
     a = ap.parse_args()
     picks = json.loads(PICKS.read_text(encoding="utf-8")) if PICKS.exists() else {}
     if a.list:
@@ -969,9 +1396,11 @@ def main() -> int:
         ap.print_help()
         return 1
     OUT.mkdir(exist_ok=True)
-    for w in (1, 2):
+    only = [int(v) for v in a.worlds.split(",")] if a.worlds else list(WORLDS)
+    for w in only:
         chosen: list[dict] = []
-        for k in range(2, TRACKS + 1):
+        first = 2 if w in HAND_MADE_T1 else 1
+        for k in range(first, TRACKS + 1):
             key = f"w{w}_t{k}"
             pk = picks.get(key, {})
             cs = candidates(w, k, pk.get("bend_scale"))
@@ -1021,6 +1450,7 @@ def main() -> int:
             rng = random.Random(track_seed(w, k) ^ 0x9E0)
             added = add_pro_hindrances(w, t, rng)
             pro["blocks"], pro["patches"], pro["rollers"] = t["blocks"], t["patches"], t["rollers"]
+            pro["hops"] = [round(h, 1) for h in t.get("hops", [])]
             pro["pro_added"] = added
             errs = validate(w, t, base_rules=False)
             if errs or len(added) != 2:

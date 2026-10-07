@@ -32,6 +32,8 @@ const KEYS: Array[String] = [
 
 func _init() -> void:
 	for w: int in range(1, RrBalance.WORLDS_BUILT + 1):
+		if not RrWorlds.has_table(w):
+			continue
 		var d: Dictionary = RrTracks.get_def(RrTracks.key(w, 1))
 		var out: Dictionary = {"key": RrTracks.key(w, 1), "track": 1, "pro": false}
 		out["s_max"] = d["s_max"]
