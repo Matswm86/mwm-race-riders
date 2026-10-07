@@ -38,6 +38,8 @@ var last_pad_t: float = -99.0
 var boost_until: float = -99.0
 var land_until: float = -1.0
 var hay_until: float = -1.0
+## W6 air ring speed (GDD 6.0), absolute race time when it ends.
+var ring_until: float = -1.0
 var bump_until: float = -1.0
 var push_until: float = -1.0
 var push_v: float = 0.0
@@ -75,6 +77,8 @@ var next_pad: int = 0
 var next_kick: int = 0
 var next_hay: int = 0
 var next_gate: int = 0
+var next_hop: int = 0
+var next_ring: int = 0
 
 
 ## On the ground and still in the knock-off sequence (fall, lie, get up).

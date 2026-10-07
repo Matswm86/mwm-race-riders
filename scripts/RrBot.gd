@@ -22,7 +22,7 @@ static func skilled_steer(race: RrRace) -> int:
 		var ahead: float = float(o[0]) - p.s
 		if float(o[1]) < p.s or ahead > 45.0:
 			continue
-		if String(o[4]) == "sand" and p.vehicle == RrRider.BOARD:
+		if RrTrack.board_ignores(String(o[4])) and p.vehicle == RrRider.BOARD:
 			continue
 		var clear: float = float(o[3]) + RrBalance.RIDER_RADIUS + 0.6
 		var aim: float = target if have else p.x
@@ -38,7 +38,7 @@ static func skilled_steer(race: RrRace) -> int:
 				target = right if absf(right - aim) < absf(left - aim) else left
 			have = true
 		break
-	return _toward(p.x, target)
+	return _toward(p.x, RrAi.off_island(trk, p.s + 10.0, target))
 
 
 static func knocker_steer(race: RrRace) -> int:

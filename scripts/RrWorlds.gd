@@ -7,7 +7,9 @@ extends RefCounted
 ## fog and weather; nothing is reused from one world to the next except the
 ## racers and the shared kit. Track numbers
 ## are GDD 6.1 / 6.2 section tables (s in metres from the start line, x in
-## metres, + = right). Slice: worlds 1 and 2 have tracks; 3-6 are design only.
+## metres, + = right). Worlds 1 and 2 have a hand-made track 1 here; worlds
+## 3-6 (DESIGN 11) have only their look and kit here: every one of their
+## tracks, track 1 included, is data from tools/track_gen.py (tracks/*.json).
 
 const W1: Dictionary = {
 	"id": 1,
@@ -274,7 +276,10 @@ const W2: Dictionary = {
 	"zones": {"slot": [321.0, 453.0], "lane": [450.0, 930.0], "mesa": 930.0, "town": 1350.0},
 	"look":
 	{
-		"sky": "res://assets/textures/world2/sky_goegap_1k.exr",
+		# DESIGN 10a fix 1: the HDRI hills above the horizon painted out.
+		"sky": "res://assets/textures/world2/sky_goegap_skyonly_1k.exr",
+		# DESIGN 10a fix 2: the mesa backdrop ring needs a 1100 m far plane.
+		"far": 1100.0,
 		"sun_rot": Vector3(-46.0, 135.0, 0.0),
 		"sun_color": Color(1.000, 0.965, 0.910),
 		"sun_energy": 1.9,
@@ -286,6 +291,144 @@ const W2: Dictionary = {
 		"dust": Color(0.70, 0.47, 0.35),
 		"weather": "sand",
 	},
+}
+
+## Worlds 3-6 (GDD 6.0, DESIGN 11): name, base length and look. Their tracks
+## come from tracks/w<w>_t<k>.json.
+const W3: Dictionary = {
+	"id": 3,
+	"name": "Isbreen",
+	"name_en": "Glacier Run",
+	"length": 1500.0,
+	"look":
+	{
+		"sky": "res://assets/textures/world3/sky_horn_koppe_snow_1k.exr",
+		"sun_rot": Vector3(-28.0, 135.0, 0.0),
+		"sun_color": Color(1.000, 0.965, 0.925),
+		"sun_energy": 1.6,
+		"sky_yaw": 0.0,
+		"exposure": 0.7,
+		"fog_begin": 40.0,
+		"fog_end": 700.0,
+		"fog_color": Color(0.80, 0.86, 0.94),
+		"fog_max": 0.35,
+		"dust": Color(0.90, 0.93, 0.98),
+		"weather": "snow",
+		"far": 1200.0,
+	},
+}
+
+const W4: Dictionary = {
+	"id": 4,
+	"name": "Askefjellet",
+	"name_en": "Ash Mountain",
+	"length": 1470.0,
+	"look":
+	{
+		"sky": "res://assets/textures/world4/sky_belfast_sunset_puresky_1k.exr",
+		"sun_rot": Vector3(-9.0, 135.0, 0.0),
+		"sun_color": Color(1.000, 0.698, 0.478),
+		"sun_energy": 1.1,
+		"sky_yaw": 0.0,
+		"exposure": 1.1,
+		"fog_begin": 25.0,
+		"fog_end": 520.0,
+		"fog_color": Color(0.50, 0.37, 0.27),
+		"fog_max": 0.42,
+		"dust": Color(0.36, 0.34, 0.32),
+		"weather": "ash",
+		"far": 1300.0,
+	},
+}
+
+const W5: Dictionary = {
+	"id": 5,
+	"name": "Regnskogen",
+	"name_en": "Rainforest",
+	"length": 1500.0,
+	"look":
+	{
+		"sky": "res://assets/textures/world5/sky_rainforest_trail_1k.exr",
+		"sun_rot": Vector3(-41.0, 135.0, 0.0),
+		"sun_color": Color(1.000, 0.949, 0.871),
+		"sun_energy": 0.7,
+		"sky_yaw": 0.0,
+		"exposure": 1.05,
+		"fog_begin": 18.0,
+		"fog_end": 260.0,
+		"fog_color": Color(0.62, 0.68, 0.62),
+		"fog_max": 0.5,
+		"dust": Color(0.27, 0.23, 0.17),
+		"weather": "rain",
+	},
+}
+
+const W6: Dictionary = {
+	"id": 6,
+	"name": "Nattehavna",
+	"name_en": "Night Harbour",
+	"length": 1575.0,
+	"look":
+	{
+		"sky": "res://assets/textures/world6/sky_qwantani_moonrise_puresky_1k.exr",
+		"sky_energy": 0.035,
+		"sun_rot": Vector3(-14.0, 135.0, 0.0),
+		"sun_color": Color(0.62, 0.71, 0.85),
+		"sun_energy": 0.2,
+		"sky_yaw": 0.0,
+		"exposure": 1.85,
+		"glow_threshold": 1.0,
+		"fog_begin": 30.0,
+		"fog_end": 600.0,
+		"fog_color": Color(0.10, 0.11, 0.14),
+		"fog_max": 0.45,
+		"dust": Color(0.30, 0.30, 0.32),
+		"weather": "drizzle",
+		"far": 1300.0,
+		"lamps": true,
+		"ambient": Color(0.16, 0.19, 0.26),
+	},
+}
+
+## What each world puts on the track (GDD 6.0 hindrances, DESIGN 9-11 models).
+## block / roller / hop: model names under assets/models (world dirs as
+## "world5/branch_pile"); block_mult: Block slow-down; patches: patch kind ->
+## model; ramp: kicker skin of the small kickers.
+const KIT: Dictionary = {
+	1: {"block": "hay_bale", "block_mult": 0.85, "roller": "tumbleweed", "hop": ""},
+	2: {"block": "hay_bale", "block_mult": 0.85, "roller": "tumbleweed", "hop": ""},
+	3: {"block": "", "block_mult": 1.0, "roller": "world3/snow_slough", "hop": ""},
+	4:
+	{
+		"block": "",
+		"block_mult": 1.0,
+		"roller": "world4/falling_rock_a",
+		"hop": "world4/lava_crust_ridge",
+	},
+	5:
+	{
+		"block": "world5/branch_pile",
+		"block_mult": 0.85,
+		"roller": "",
+		"hop": "world5/log_hop",
+	},
+	6:
+	{
+		"block": "world6/traffic_cone",
+		"block_mult": 0.95,
+		"roller": "world6/cable_spool",
+		"hop": "",
+	},
+}
+## Patch kind -> model (scaled to the patch rectangle by RrWorld).
+const PATCH_MODELS: Dictionary = {
+	"mud": "mud_puddle",
+	"sand": "sand_drift",
+	"ice": "world3/ice_patch",
+	"snow": "world3/snow_drift",
+	"ash": "world4/ash_dune",
+	"ford": "world5/river_ford",
+	"steel": "world6/steel_plate",
 }
 
 ## Evening light for the Pro variants (GDD 17.1): a sunset HDRI from the same
@@ -314,11 +457,77 @@ const EVENING: Dictionary = {
 		"fog_max": 0.38,
 		"fog_end": 560.0,
 	},
+	# Worlds 3-6 have one sky each (DESIGN 11): evening = the same panorama
+	# dimmed, a low warm sun behind the camera and warmer, thicker fog.
+	3:
+	{
+		"sun_rot": Vector3(-12.0, 140.0, 0.0),
+		"sun_color": Color(1.000, 0.720, 0.550),
+		"sun_energy": 1.3,
+		"sky_energy": 0.7,
+		"exposure": 0.85,
+		"fog_color": Color(0.86, 0.74, 0.70),
+		"fog_max": 0.42,
+		"fog_end": 600.0,
+	},
+	4:
+	{
+		"sun_rot": Vector3(-5.0, 140.0, 0.0),
+		"sun_color": Color(1.000, 0.550, 0.350),
+		"sun_energy": 0.95,
+		"sky_energy": 0.7,
+		"exposure": 1.25,
+		"fog_color": Color(0.42, 0.28, 0.20),
+		"fog_max": 0.5,
+		"fog_end": 460.0,
+	},
+	5:
+	{
+		"sun_rot": Vector3(-15.0, 140.0, 0.0),
+		"sun_color": Color(1.000, 0.750, 0.550),
+		"sun_energy": 0.6,
+		"sky_energy": 0.75,
+		"exposure": 1.15,
+		"fog_color": Color(0.58, 0.54, 0.46),
+		"fog_max": 0.55,
+		"fog_end": 230.0,
+	},
+	# Night Harbour's "evening" is the last dusk light before the night.
+	6:
+	{
+		"sun_rot": Vector3(-8.0, 140.0, 0.0),
+		"sun_color": Color(0.950, 0.620, 0.450),
+		"sun_energy": 0.35,
+		"sky_energy": 0.12,
+		"exposure": 1.6,
+		"fog_color": Color(0.20, 0.15, 0.15),
+		"fog_max": 0.45,
+	},
 }
 
 
 static func get_def(id: int) -> Dictionary:
-	return W2 if id == 2 else W1
+	match id:
+		2:
+			return W2
+		3:
+			return W3
+		4:
+			return W4
+		5:
+			return W5
+		6:
+			return W6
+	return W1
+
+
+## Worlds 1-2 have a hand-made track 1 table (GDD 6.1 / 6.2) here.
+static func has_table(id: int) -> bool:
+	return id == 1 or id == 2
+
+
+static func kit(id: int) -> Dictionary:
+	return KIT.get(id, KIT[1])
 
 
 ## The world's look, with the evening preset on top for Pro tracks.

@@ -260,6 +260,8 @@ In the track-space model the landing is simply `h` returning to 0 over a virtual
 
 Built after the slice, each with its own section table in the same format, 10 pads, 4 kickers including the signature, 2 swap gates and the hindrances from table 6.0. Each world adds exactly one new mechanic (table 6.0, last column); world 5's split path is the only layout change. Section tables are game-designer work for the next pass.
 
+**Built 2026-10-07 (builder notes, the game-designer may retune):** worlds 3-6 have no hand-made table; all 8 tracks per world, track 1 included, come from each world's kit in `tools/track_gen.py` with the rules of 17.1. Track lengths are `WORLD_LENGTH_M[w] + TRACK_STEP_W[w] x (k - 1)` with steps 25 / 25 / 20 / 25 / 20 / 10 m for worlds 1-6, so an idle Lett child finishes every track inside 41-51 s (owner 10-07). New behaviours: ice and wet steel do not slow, steering slides (lateral x1.3, easing x2); snow x0.90 (bike and board), ash x0.88 (board floats), ford x0.85 (board immune); Hop = 0.4 s of air; the W4 vent launches (1.4 s) only a rider within 2.4 m of its centre while it puffs (1.6 s of every 2 s in Lett, 1.2 s in Vanlig, my call); W5 split path: an island between a 4.4 m bridge route (1 pad, the kid line) and a 6 m ford route (3 pads); W6 air rings sit at the apex of each jump at cruise and give x1.25 for 1 s to an airborne rider within 2.6 m of the ring centre. Champion II previews the Pro track 1 of worlds 1 and 2.
+
 ## 7. AI pack
 
 ### 7.1 Riders

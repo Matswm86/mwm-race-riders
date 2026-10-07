@@ -40,8 +40,21 @@ var kicker_models: Array[String] = []
 var blocks: Array = []
 ## Patch hindrances [s0, s1, x0, x1, kind] (mud, sand).
 var patches: Array = []
-## Roller hindrances [s, dir] (tumbleweeds).
+## Roller hindrances [s, dir] (tumbleweeds, snow slough, rocks, spools).
 var rollers: Array = []
+## Hop hindrances: s of each low object across the whole track (W4 lava
+## crust ridge, W5 log): 0.4 s of air, no trick, no slow (GDD 4.8).
+var hops: Array[float] = []
+## W6 air rings [s, x, h]: flying through gives RING_MULT for RING_TIME_S.
+var rings: Array = []
+## W5 split path: s range and the island's x range between the narrow
+## bridge route (left) and the wide ford route (right), or empty.
+var split: Array = []
+## Extra centre-line height [s, metres] (W6 container-stack ramp), smoothstep
+## between rows; empty = none.
+var lifts: Array = []
+## The world's track kit (RrWorlds.KIT): block / roller / hop models.
+var kit: Dictionary = {}
 var gates: Array = []
 var bends: Array = []
 var grades: Array = []
@@ -83,6 +96,12 @@ func _init(id: Variant = 1) -> void:
 	blocks = d["blocks"]
 	patches = d["patches"]
 	rollers = d["rollers"]
+	for hp: Variant in d.get("hops", []):
+		hops.append(float(hp))
+	rings = d.get("rings", [])
+	split = d.get("split", [])
+	lifts = d.get("lifts", [])
+	kit = RrWorlds.kit(world_id)
 	gates = d["gates"]
 	bends = d["bends"]
 	grades = d["grades"]
@@ -92,6 +111,13 @@ func _init(id: Variant = 1) -> void:
 	fence = _range(d["fence"])
 	river = _range(d["river"])
 	look = d["look"]
+	if world_id == 1 and river.x >= 0.0:
+		# DESIGN 9a: a kicker on the river road is the wooden river bridge's
+		# hump (same lip and airtime, a longer, rounder deck).
+		for i: int in kickers.size():
+			var k: float = kickers[i]
+			if k > river.x + 14.0 and k < river.y - 14.0 and kicker_models[i] == "ramp":
+				kicker_models[i] = "world1/river_bridge"
 	_integrate()
 
 
@@ -131,6 +157,27 @@ func _integrate() -> void:
 		_pos[i] = p
 		_yaw[i] = yaw
 		_grade[i] = g
+	if not lifts.is_empty():
+		for i: int in n:
+			var s2: float = S_MIN + float(i) * STEP
+			_pos[i].y += lift_at(s2)
+			_grade[i] -= lift_at(s2 + 0.5) - lift_at(s2 - 0.5)
+
+
+## Extra centre height at s from the lifts table (smoothstep between rows).
+func lift_at(s: float) -> float:
+	if lifts.is_empty() or s <= float(lifts[0][0]):
+		return 0.0 if lifts.is_empty() else float(lifts[0][1])
+	for i: int in range(1, lifts.size()):
+		var a: Array = lifts[i - 1]
+		var b: Array = lifts[i]
+		if s <= float(b[0]):
+			var k: float = clampf(
+				(s - float(a[0])) / maxf(0.001, float(b[0]) - float(a[0])), 0.0, 1.0
+			)
+			k = k * k * (3.0 - 2.0 * k)
+			return lerpf(float(a[1]), float(b[1]), k)
+	return float(lifts[lifts.size() - 1][1])
 
 
 func _curv_at(s: float) -> float:
@@ -232,27 +279,99 @@ func zone_at(name: String, fallback: float) -> float:
 	return float(z) if (z is float or z is int) else fallback
 
 
-## Patch slow-down for a rider at (s, x) on a vehicle (GDD 4.8): 1.0 outside
-## every patch; the hoverboard floats over sand.
-func patch_mult(s: float, x: float, board: bool, easy: bool) -> float:
+## Kind of the patch under (s, x), or "".
+func patch_kind(s: float, x: float) -> String:
 	for p: Array in patches:
 		if s >= float(p[0]) and s < float(p[1]) and x >= float(p[2]) and x <= float(p[3]):
-			if String(p[4]) == "sand":
-				if board:
-					return 1.0
-				return RrBalance.SAND_MULT_L if easy else RrBalance.SAND_MULT_V
-			return RrBalance.MUD_MULT
-	return 1.0
+			return String(p[4])
+	return ""
+
+
+## Patch slow-down for a rider at (s, x) on a vehicle (GDD 4.8, 6.0): 1.0
+## outside every patch; the hoverboard floats over sand and ash and is immune
+## to the ford; ice and wet steel never slow, they slide (patch_slides).
+static func kind_mult(kind: String, board: bool, easy: bool) -> float:
+	match kind:
+		"":
+			return 1.0
+		"sand":
+			if board:
+				return 1.0
+			return RrBalance.SAND_MULT_L if easy else RrBalance.SAND_MULT_V
+		"ash":
+			return 1.0 if board else RrBalance.ASH_MULT
+		"ford":
+			return 1.0 if board else RrBalance.FORD_MULT
+		"snow":
+			return RrBalance.SNOW_MULT
+		"ice", "steel":
+			return 1.0
+	return RrBalance.MUD_MULT
+
+
+func patch_mult(s: float, x: float, board: bool, easy: bool) -> float:
+	return RrTrack.kind_mult(patch_kind(s, x), board, easy)
+
+
+## True on ice (W3) or wet steel plates (W6): steering slides (GDD 6.0).
+func patch_slides(s: float, x: float) -> bool:
+	var k: String = patch_kind(s, x)
+	return k == "ice" or k == "steel"
+
+
+## Patch kinds the hoverboard rides over unslowed (AI and bots skip them).
+static func board_ignores(kind: String) -> bool:
+	return kind in ["sand", "ash", "ford", "ice", "steel"]
+
+
+## W5 split path: the island's x range at s (it grows from a point over
+## SPLIT_ISLAND_EASE_M at both ends), or Vector2(1, -1) when there is none.
+func island(s: float) -> Vector2:
+	if split.size() < 4:
+		return Vector2(1.0, -1.0)
+	var a: float = split[0]
+	var b: float = split[1]
+	if s <= a or s >= b:
+		return Vector2(1.0, -1.0)
+	var e: float = RrBalance.SPLIT_ISLAND_EASE_M
+	var k: float = clampf(minf(s - a, b - s) / e, 0.0, 1.0)
+	var xa: float = split[2]
+	var xb: float = split[3]
+	var c: float = (xa + xb) * 0.5
+	var hw: float = (xb - xa) * 0.5 * k
+	return Vector2(c - hw, c + hw)
+
+
+func in_split(s: float) -> bool:
+	return split.size() >= 4 and s > float(split[0]) and s < float(split[1])
+
+
+## Kicker profile by skin (DESIGN 9a: the W1 river bridge's 0.95 m hump is
+## its kicker; W4's steam vent mound launches from the ground): [deck length
+## before the lip, lip height].
+static func kicker_profile(model: String) -> Vector2:
+	if model == "world1/river_bridge":
+		return Vector2(5.8, 0.95)
+	if model == "vent":
+		return Vector2(0.0, 0.0)
+	return Vector2(RrBalance.KICKER_LEN_M, RrBalance.KICKER_LIP_M)
 
 
 ## Height of the kicker deck under s (deck from lip - KICKER_LEN_M to lip),
 ## 0 off the ramps.
 func ramp_height(s: float) -> float:
-	for k: float in kickers:
-		var a: float = k - RrBalance.KICKER_LEN_M
+	for i: int in kickers.size():
+		var k: float = kickers[i]
+		var pr: Vector2 = RrTrack.kicker_profile(kicker_models[i])
+		if pr.x <= 0.0:
+			continue
+		var a: float = k - pr.x
 		if s >= a and s < k:
-			var u: float = (s - a) / RrBalance.KICKER_LEN_M
-			return RrBalance.KICKER_LIP_M * u * u
+			var u: float = (s - a) / pr.x
+			if pr.x > RrBalance.KICKER_LEN_M + 0.1:
+				# Bridge hump: rises fast, rounds over the crest.
+				return pr.y * (1.0 - (1.0 - u) * (1.0 - u))
+			return pr.y * u * u
 	return 0.0
 
 

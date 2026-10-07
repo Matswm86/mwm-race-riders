@@ -7,8 +7,12 @@ extends RefCounted
 ## events into sound, effects and HUD.
 ## Contact (GDD 4.7): the player knocks a rival off by steering into its side;
 ## rivals only nudge the player, who never falls and is never slowed.
-## Hindrances (GDD 4.8): Block (hay), Patch (mud, sand) and Roller
-## (tumbleweed); none of them makes anyone fall.
+## Hindrances (GDD 4.8, 6.0): Block (hay, branch piles, cones), Patch (mud,
+## sand, snow, ash, ford; ice and wet steel slide), Roller (tumbleweed, snow
+## slough, rocks, cable spools) and Hop (lava crust, logs); none of them makes
+## anyone fall. World features: the W4 steam vent launches only while it
+## puffs, W5's split path keeps riders off its island, W6's air rings give
+## speed to a rider flying through them.
 
 enum Phase { PRE, LIGHTS, RACE, DONE }
 
@@ -115,6 +119,12 @@ func start_lights() -> void:
 	t = -RrBalance.START_LIGHTS_S
 
 
+## W4 steam vent: puffing (launch window open) at race time tt.
+func vent_puffing(tt: float) -> bool:
+	var w: float = RrBalance.VENT_WINDOW_S_L if easy else RrBalance.VENT_WINDOW_S_V
+	return fposmod(tt, RrBalance.VENT_PERIOD_S) < w
+
+
 func bale_visible(i: int) -> bool:
 	return _bale_back[i] < 0.0 or t >= _bale_back[i]
 
@@ -195,7 +205,9 @@ func _effects(r: RrRider) -> float:
 	if t < r.land_until:
 		m *= RrBalance.LAND_BONUS_MULT
 	if t < r.hay_until:
-		m *= RrBalance.HAY_MULT
+		m *= float(track.kit.get("block_mult", RrBalance.HAY_MULT))
+	if t < r.ring_until:
+		m *= RrBalance.RING_MULT
 	if t < r.bump_until:
 		m *= RrBalance.BUMP_MULT_PLAYER if r.is_player else RrBalance.BUMP_MULT_AI
 	return m * r.patch_mult
@@ -358,6 +370,10 @@ func _lateral(r: RrRider, dt: float, steer: int) -> void:
 		rate = RrBalance.AI_LAT_MAX / RrBalance.AI_LAT_EASE_S
 	if r.airborne:
 		target *= RrBalance.AIR_STEER_FRAC
+	elif track.patch_slides(r.s, r.x):
+		# W3 ice / W6 wet steel (GDD 6.0): lateral speed x1.3, easing x2.
+		target *= RrBalance.SLIDE_LAT_MULT
+		rate /= RrBalance.SLIDE_EASE_MULT
 	r.lat_v = move_toward(r.lat_v, target, rate * dt)
 	var push: float = r.push_v if t < r.push_until else 0.0
 	r.x += (r.lat_v + push) * dt
@@ -369,6 +385,15 @@ func _lateral(r: RrRider, dt: float, steer: int) -> void:
 	elif r.x < -lim:
 		r.x = -lim
 		r.rail = r.lat_v < -0.1 or push < 0.0
+	var isl: Vector2 = track.island(r.s)
+	if isl.x < isl.y:
+		# W5 split path: the island between the two routes is a rail too.
+		var lo: float = isl.x - RrBalance.RIDER_RADIUS
+		var hi: float = isl.y + RrBalance.RIDER_RADIUS
+		if r.x > lo and r.x < hi:
+			var to_lo: bool = r.x - lo < hi - r.x
+			r.x = lo if to_lo else hi
+			r.rail = (r.lat_v > 0.1) if to_lo else (r.lat_v < -0.1)
 	if r.rail and not was_rail and not r.finished:
 		events.append(["rail", r.index, null])
 
@@ -440,14 +465,35 @@ func _elements(r: RrRider) -> void:
 			events.append(["pad", r.index, [r.next_pad, r.chain]])
 		r.next_pad += 1
 	while r.next_kick < track.kickers.size() and r.s >= track.kickers[r.next_kick]:
-		if not r.airborne and not r.down():
+		var model: String = track.kicker_models[r.next_kick]
+		var go: bool = not r.airborne and not r.down()
+		if go and model == "vent":
+			# W4 steam vent (GDD 6.0): launches only a rider on the mound
+			# while it puffs; a miss just rides on.
+			go = absf(r.x) < RrBalance.VENT_HALF_W_M and vent_puffing(t)
+		if go:
 			var air: float = track.kicker_air[r.next_kick]
 			var lip: float = track.kickers[r.next_kick]
 			if track.gap.x > lip and track.gap.x - lip < 10.0:
 				# Gap jump: always clear the far lip, whatever the speed.
 				air = maxf(air, (track.gap.y + 3.0 - r.s) / maxf(r.v, 1.0))
-			_launch(r, air, RrBalance.KICKER_LIP_M)
+			_launch(r, air, RrTrack.kicker_profile(model).y)
+			if model == "vent":
+				events.append(["vent", r.index, null])
 		r.next_kick += 1
+	while r.next_hop < track.hops.size() and r.s >= track.hops[r.next_hop]:
+		if not r.airborne and not r.down() and r.h < 0.1:
+			_launch(r, RrBalance.HOP_AIR_S, 0.0)
+			events.append(["hop", r.index, r.next_hop])
+		r.next_hop += 1
+	while r.next_ring < track.rings.size() and r.s >= float(track.rings[r.next_ring][0]):
+		var ring: Array = track.rings[r.next_ring]
+		var dx: float = r.x - float(ring[1])
+		var dh: float = r.h - float(ring[2])
+		if r.airborne and dx * dx + dh * dh < RrBalance.RING_R_M * RrBalance.RING_R_M:
+			r.ring_until = t + RrBalance.RING_TIME_S
+			events.append(["ring", r.index, r.next_ring])
+		r.next_ring += 1
 	while r.next_hay < track.blocks.size() and r.s >= float(track.blocks[r.next_hay][0]):
 		var bale: Array = track.blocks[r.next_hay]
 		var reach_h: float = RrTrack.HAY_HALF_W + RrBalance.RIDER_RADIUS

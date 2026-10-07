@@ -3,7 +3,8 @@ extends RefCounted
 
 ## Track registry (GDD 17.1): 8 tracks per world plus a Pro variant of each.
 ## Keys are "w<world>_t<k>" and "w<world>_t<k>p" (Pro). Track 1 of a world
-## is the hand-made table in RrWorlds; tracks 2-8 and every Pro variant are
+## is the hand-made table in RrWorlds for worlds 1-2; every other track
+## (worlds 3-6 track 1 too) and every Pro variant is
 ## data written offline by tools/track_gen.py into res://tracks/*.json (the
 ## game never generates a track). Par times come from tests/par_times.gd
 ## (tracks/par.json). Only built worlds (RrBalance.WORLDS_BUILT) have tracks.
@@ -53,7 +54,7 @@ static func exists(k: String) -> bool:
 	var n: int = number_of(k)
 	if w < 1 or w > RrBalance.WORLDS_BUILT or n < 1 or n > RrBalance.TRACKS_PER_WORLD:
 		return false
-	if n == 1 and not is_pro(k):
+	if n == 1 and not is_pro(k) and RrWorlds.has_table(w):
 		return true
 	return FileAccess.file_exists(DIR + k + ".json")
 
@@ -65,7 +66,7 @@ static func get_def(k: String) -> Dictionary:
 		return _defs[k]
 	var w: int = world_of(k)
 	var d: Dictionary
-	if number_of(k) == 1 and not is_pro(k):
+	if number_of(k) == 1 and not is_pro(k) and RrWorlds.has_table(w):
 		d = RrWorlds.get_def(w).duplicate(true)
 		d["track"] = 1
 		d["pro"] = false
@@ -78,8 +79,8 @@ static func get_def(k: String) -> Dictionary:
 		var path: String = DIR + k + ".json"
 		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 		if not parsed is Dictionary:
-			push_error("RrTracks: cannot read %s, using world %d track 1" % [path, w])
-			return get_def(key(w, 1))
+			push_error("RrTracks: cannot read %s, using world 1 track 1" % path)
+			return get_def(key(1, 1))
 		d = parsed
 		d["id"] = w
 		d["track"] = number_of(k)

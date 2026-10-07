@@ -101,7 +101,23 @@ const ROLLER_LAT_MPS_V: float = 3.0
 const ROLLER_DIAM_M: float = 1.2
 const ROLLER_NUDGE_MPS: float = 2.0  # sideways, 0.25 s, no speed loss
 const ROLLER_NUDGE_S: float = 0.25
-const HOP_AIR_S: float = 0.4  # later worlds (logs, lava crust)
+const HOP_AIR_S: float = 0.4  # W4 lava-crust ridges, W5 logs (Hop: no trick, no slow)
+# Worlds 3-6 hindrances (GDD 6.0 / 4.8)
+const SNOW_MULT: float = 0.90  # W3 snow drift (Patch, bike and board)
+const ASH_MULT: float = 0.88  # W4 ash dune (Patch, hoverboard floats over)
+const FORD_MULT: float = 0.85  # W5 river ford (Patch on the bike, board immune)
+const SLIDE_LAT_MULT: float = 1.3  # W3 ice / W6 wet steel: no slow, steering slides
+const SLIDE_EASE_MULT: float = 2.0  # steering eases in and out twice as slowly
+const BRANCH_MULT: float = 0.85  # W5 fallen-branch pile (Block)
+const CONE_MULT: float = 0.95  # W6 traffic cone (Block)
+const VENT_PERIOD_S: float = 2.0  # W4 steam vent puffs every 2 s
+const VENT_WINDOW_S_L: float = 1.6  # Lett: launch window of each puff (my call)
+const VENT_WINDOW_S_V: float = 1.2  # Vanlig: the visible puff (DESIGN 11.2: 1.2 s)
+const VENT_HALF_W_M: float = 2.4  # ride over the 3.8 m mound (rider radius included)
+const RING_MULT: float = 1.25  # W6 air ring: +1 s of x1.25 (GDD 6.0)
+const RING_TIME_S: float = 1.0
+const RING_R_M: float = 2.6  # ring radius (air_ring.glb, 5.2 m)
+const SPLIT_ISLAND_EASE_M: float = 15.0  # W5 split path: island wedge length at each end
 const HINDRANCE_MIN_GAP_M: float = 45.0  # any two; same lane 90
 const HINDRANCE_SAME_LANE_GAP_M: float = 90.0
 const HINDRANCE_VISIBLE_M: float = 60.0  # >= 1.2 s reaction at the 48 m/s cap
@@ -196,7 +212,7 @@ const GHOST_FADE_FAR_M: float = 6.0  # full GHOST_ALPHA from here
 # Unlocks (total finishes)
 const UNLOCK_HOVER: int = 1
 const WORLD_COUNT: int = 6
-const WORLDS_BUILT: int = 2  # slice: worlds 1-2 have tracks; 3-6 are design only
+const WORLDS_BUILT: int = 6  # all six worlds have their 8 tracks + Pro variants
 const WORLD_LENGTH_M: Array[float] = [1425.0, 1470.0, 1500.0, 1470.0, 1500.0, 1575.0]
 # World N+1 opens on the first finish of world N (any place).
 const FREE_WORLDS: int = 1
@@ -241,6 +257,10 @@ const IDLE_HINT_SHOW_S: float = 2.0
 const WORLDS: int = 6
 const TRACKS_PER_WORLD: int = 8
 const TRACK_LENGTH_STEP_M: float = 25.0  # track k = WORLD_LENGTH_M[w] + 25 * (k - 1)
+## Per-world step (owner 10-07: idle Lett within 41-51 s on every track, so the
+## longer worlds 3, 5 and 6 grow less per track). Track k = WORLD_LENGTH_M[w]
+## + TRACK_STEP_W[w] * (k - 1).
+const TRACK_STEP_W: Array[float] = [25.0, 25.0, 20.0, 25.0, 20.0, 10.0]
 const PRO_AI_SKILL_ADD: float = 0.01
 const PRO_EXTRA_HINDRANCES: int = 2
 const LEAGUES: Array[StringName] = [
@@ -270,5 +290,5 @@ const MEDAL_PAR_MULT: Array[float] = [1.01, 1.04, 1.08]  # gold, silver, bronze
 const FREE_TRACKS_W1: int = 5  # = Bronze III
 const FREE_LEAGUE_TIERS: int = 1
 # Builder additions for progression v2
-const LEAGUES_BUILT: int = 2  # Bronze (world 1) and Silver (world 2)
+const LEAGUES_BUILT: int = 6  # Bronze (world 1) ... Champion (world 6)
 const TABLE_SLIDE_S: float = 1.5  # league table rows slide to their new places

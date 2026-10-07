@@ -97,7 +97,7 @@ func target_x(track: RrTrack, riders: Array[RrRider], t: float) -> float:
 	if t < _traffic_until:
 		tx += _traffic_shift
 	tx = _lean_in(tx, riders[0], t)
-	tx = clampf(tx, -lim, lim)
+	tx = RrAi.off_island(track, r.s + 8.0, clampf(tx, -lim, lim))
 	if _pad_s < 0.0 and r.next_pad < track.pads.size():
 		# A pad it did not roll for: ride past its edge, so pad hits stay at
 		# the pad_seek rate the pack sim was tuned with.
@@ -112,6 +112,19 @@ func target_x(track: RrTrack, riders: Array[RrRider], t: float) -> float:
 	return tx
 
 
+## W5 split path: a target on the island moves to its nearer edge (the
+## rider picks the route it is closer to).
+static func off_island(track: RrTrack, s: float, tx: float) -> float:
+	var isl: Vector2 = track.island(s)
+	if isl.x >= isl.y:
+		return tx
+	var lo: float = isl.x - RrBalance.RIDER_RADIUS - 0.3
+	var hi: float = isl.y + RrBalance.RIDER_RADIUS + 0.3
+	if tx > lo and tx < hi:
+		return lo if tx - lo < hi - tx else hi
+	return tx
+
+
 ## Blocks and patches: one roll (AI_HAY_AVOID) per hindrance in the path,
 ## then a swerve to the more open side until it is passed.
 func _avoid(tx: float, _t: float) -> float:
@@ -123,7 +136,7 @@ func _avoid(tx: float, _t: float) -> float:
 		var os: float = o[0]
 		var ox: float = o[2]
 		var half: float = o[3]
-		var floats: bool = String(o[4]) == "sand" and r.vehicle == RrRider.BOARD
+		var floats: bool = RrTrack.board_ignores(String(o[4])) and r.vehicle == RrRider.BOARD
 		if os - r.s <= RrBalance.AI_HAY_LOOKAHEAD_M and _obst_rolled != _obst_i and not floats:
 			_obst_rolled = _obst_i
 			var clear: float = half + RrBalance.RIDER_RADIUS
