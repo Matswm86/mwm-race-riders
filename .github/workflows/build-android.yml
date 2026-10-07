@@ -149,6 +149,12 @@ jobs:
           ./godot --headless --verbose --export-release "Android" "${EXPORT_NAME}.apk" 2>&1 | tee export.log
           ls -la "${EXPORT_NAME}.apk"
 
+      - name: APK size report (native libraries compressed)
+        run: |
+          ls -l "${EXPORT_NAME}.apk"
+          unzip -v "${EXPORT_NAME}.apk" | grep -E "lib/.*\.so$" || true
+          unzip -v "${EXPORT_NAME}.apk" | tail -1
+
       - name: Upload APK as workflow artifact
         uses: actions/upload-artifact@v4
         with:
