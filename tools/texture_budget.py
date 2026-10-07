@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""APK size budget (owner 10-07: keep the APK under 300 MB): cap the import size of the world
-textures. Terrain albedos (the trail fills half the screen), the tree / plant card atlases and
-the skies keep their size; terrain normal/ARM maps, every prop's normal and ORM map and the far
-backdrops are imported at 512 px, prop albedos at 1024 px (DESIGN 12: ETC2/ASTC, mipmaps on).
+"""APK size budget (owner 10-07: keep the APK under 300 MB; the first six-world build was 359 MB):
+cap the import size of the world textures (DESIGN 12: ETC2/ASTC, mipmaps on).
+- Trail and smooth-lane albedos (they fill half the screen): 1024 px (the 2K W1/W2 trails too).
+- Other terrain albedos (base, verge, patch, rock layers, tiled every 3-9 m): 512 px.
+- Terrain normal/ARM maps: 512 px on trails and lanes, 256 px on the other layers. Prop albedos: 512 px. Prop normal/ORM maps: 256 px.
+- Tree and plant card atlases: albedo kept, normal 1024 px. Skies: 1024 px wide (the W1/W2 skies were
+  re-saved as half float, like the others).
 Edits process/size_limit in the existing .import files in place (uids kept).
 
 python3 tools/texture_budget.py
@@ -14,31 +17,39 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-FAR = {
-    "mountain_ridge",
-    "crater_cone",
-    "mesa_backdrop",
-    "lit_bridge_far",
-    "container_stack_far",
-    "ferry",
-    "warehouse",
-    "sea_marker",
+TRAILS = {
+    "terrain_rocky_trail_02",
+    "terrain_gravel_floor_02",
+    "terrain_red_laterite_soil_stones",
+    "terrain_worn_asphalt",
+    "terrain_snow_groomed",
+    "terrain_blue_ice",
+    "terrain_ash_trail",
+    "terrain_basalt",
+    "terrain_mud_wet",
+    "terrain_asphalt_wet",
+    "terrain_quay_concrete",
 }
+CARDS = ("tree_", "grass_card", "plant_", "shrub_", "bush_desert")
 
 
 def limit(p: Path) -> int:
     n = p.stem
-    if n.startswith("sky_") or n.startswith("fx_") or n.startswith("tree_") or "_" not in n:
+    if n.startswith("sky_"):
+        return 1024
+    if n.startswith("fx_") or "_" not in n:
         return 0
     base, kind = n.rsplit("_", 1)
+    if n.startswith(CARDS):
+        return 1024 if kind == "normal" else 0
     if n.startswith("terrain_"):
-        return 0 if kind == "albedo" else 512
-    if base in FAR:
-        return 512
+        if kind == "albedo":
+            return 1024 if base in TRAILS else 512
+        return 512 if base in TRAILS else 256
     if kind in ("normal", "orm", "arm"):
-        return 512
+        return 256
     if kind == "albedo":
-        return 1024
+        return 512
     return 0
 
 
@@ -46,14 +57,14 @@ def main() -> None:
     n = 0
     for d in range(1, 7):
         for p in sorted((ROOT / f"assets/textures/world{d}").glob("*")):
-            if p.suffix.lower() not in (".jpg", ".png"):
+            if p.suffix.lower() not in (".jpg", ".png", ".exr"):
                 continue
             imp = p.with_name(p.name + ".import")
             lim = limit(p)
             if not imp.exists() or lim == 0:
                 continue
             t = imp.read_text()
-            if "compress/mode=2" not in t:
+            if "compress/mode=2" not in t and p.suffix.lower() != ".exr":
                 continue
             line = f"process/size_limit={lim}"
             if re.search(r"^process/size_limit=\d+$", t, re.M):
