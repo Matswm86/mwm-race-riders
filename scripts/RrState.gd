@@ -391,6 +391,10 @@ func load_game() -> void:
 	if last_seen > 0.0:
 		var hours: float = (Time.get_unix_time_from_system() - last_seen) / 3600.0
 		form_shown = league.apply_away(hours, int(last_seen))
+	# The league object is rebuilt from the save, which does not store the
+	# host's lock; a host that calls load_game() again on every enter (MWM
+	# Play) would otherwise lose the Bronze III-only season on its 2nd visit.
+	league.free_only = not full_unlock
 
 
 ## Per-track progress and the ladder. Version 1 (the two-world slice) kept

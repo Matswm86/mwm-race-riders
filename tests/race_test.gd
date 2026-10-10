@@ -691,6 +691,10 @@ func _lock_check() -> void:
 			"locked season %d: still Bronze III" % (season + 1)
 		)
 	_check(free_signals == 1, "free_levels_finished sent once per app session (%d)" % free_signals)
+	# A host re-enter calls load_game() again: the lock must survive it.
+	RaceRiders.save_game()
+	RaceRiders.load_game()
+	_check(RaceRiders.league.free_only, "locked: Bronze III only after load_game (host re-enter)")
 	# A host that unlocks continues the ladder from Bronze III.
 	RaceRiders.set_full_unlock(true)
 	for r: int in RrBalance.ROUNDS_PER_SEASON:
