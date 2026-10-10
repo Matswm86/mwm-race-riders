@@ -288,6 +288,7 @@ const RIVAL_FORM_AWAY_H: float = 8.0
 const BOARD_TIME_NOISE: float = 0.015
 const MEDAL_PAR_MULT: Array[float] = [1.01, 1.04, 1.08]  # gold, silver, bronze
 const FREE_TRACKS_W1: int = 5  # = Bronze III
+const LAV_MESH_LOD_PX: float = 8.0  # Lav viewport mesh LOD threshold (Høy 1.0)
 const NEXT_SAME_WORLD: float = 0.7  # free-ride "next": share of picks in the same world
 const FREE_LEAGUE_TIERS: int = 1
 # Builder additions for progression v2

@@ -613,6 +613,8 @@ func _breakdown(tag: String) -> void:
 		elif c is MeshInstance3D:
 			var mo: Material = (c as MeshInstance3D).material_override
 			g = "ground" if mo is ShaderMaterial else "water"
+			if mo == w.get("_terrain_far_mat"):
+				g = "ground_far"
 			if (
 				mo is ShaderMaterial
 				and (mo as ShaderMaterial).shader.resource_path.contains("lane")
@@ -621,12 +623,23 @@ func _breakdown(tag: String) -> void:
 		if not groups.has(g):
 			groups[g] = []
 		(groups[g] as Array).append(c)
-	var kit: Array = []
 	for c2: Node in w.get_children():
 		if c2 is GeometryInstance3D and not c2 is RrRiderView:
-			kit.append(c2)
-	groups["kit"] = kit
+			var kn: String = "kit"
+			var km: Mesh = null
+			if c2 is MultiMeshInstance3D:
+				km = (c2 as MultiMeshInstance3D).multimesh.mesh
+			elif c2 is MeshInstance3D:
+				km = (c2 as MeshInstance3D).mesh
+			if km != null:
+				kn = "kit:" + (km.resource_name if km.resource_name != "" else km.get_class())
+				if c2.name.begins_with("@") == false:
+					kn += "@" + String(c2.name)
+			if not groups.has(kn):
+				groups[kn] = []
+			(groups[kn] as Array).append(c2)
 	var base: int = _draws()
+	var base_t: int = _tris()
 	var rows: Array = []
 	for g2: String in groups:
 		var was: Array = []
@@ -634,15 +647,15 @@ func _breakdown(tag: String) -> void:
 			was.append(n.get("visible"))
 			n.set("visible", false)
 		await _frames(3)
-		rows.append([base - _draws(), g2])
+		rows.append([base - _draws(), g2, base_t - _tris()])
 		for i: int in groups[g2].size():
 			(groups[g2][i] as Node).set("visible", was[i])
 	rows.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]))
 	var line: PackedStringArray = []
 	for r: Array in rows:
-		if int(r[0]) != 0:
-			line.append("%s %d" % [r[1], r[0]])
-	print("BREAKDOWN %s total %d: %s" % [tag, base, ", ".join(line)])
+		if int(r[0]) != 0 or int(r[2]) > 999:
+			line.append("%s %d/%dk" % [r[1], r[0], int(r[2]) / 1000])
+	print("BREAKDOWN %s total %d draws %dk tris: %s" % [tag, base, base_t / 1000, ", ".join(line)])
 	await _frames(3)
 
 

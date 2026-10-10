@@ -72,6 +72,11 @@ const LODS: Dictionary = {
 	"world5/buttress_tree": ["world5/buttress_tree_card", 70.0],
 	"world6/container": ["world6/container_far", 40.0],
 }
+## Near props whose far box is drawn at every distance, inset (scale per
+## axis) so it hides inside the near mesh: the near mesh can then switch off
+## in small cells without gaps (W6 containers, QA 10-07 triangle budget).
+const INSET_CARDS: Dictionary = {"world6/container": Vector3(0.97, 0.87, 0.94)}
+const NEAR_CELL_M: float = 50.0
 ## Props that cast the sun's shadow on Høy (near ones only: the shadow
 ## distance is 40 m).
 const CASTERS: Array[String] = [
@@ -94,7 +99,6 @@ const CASTERS: Array[String] = [
 	"world5/buttress_tree",
 	"world6/crane_jump_stack",
 	"world6/gantry_crane",
-	"world6/container",
 ]
 ## Patch model -> [native x (across), native z (along), turned 90 deg, pad x, pad z].
 const PATCH_FIT: Dictionary = {
@@ -425,18 +429,17 @@ func _build_static() -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_static_root.add_child(mi)
 	_lane_mat = _lane_material()
-	for e: Array in data["lanes"]:
+	# Lane ribbons and water pieces: one mesh each (QA 10-07 draw budget).
+	if not (data["lanes"] as Array).is_empty():
 		var ml := MeshInstance3D.new()
-		ml.mesh = e[0]
+		ml.mesh = RrWorld.merged(data["lanes"])
 		ml.material_override = _lane_mat
 		ml.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		ml.visibility_range_end = 420.0
 		_static_root.add_child(ml)
-	var wm: StandardMaterial3D = _water_material()
-	for e: Array in data["water"]:
+	if not (data["water"] as Array).is_empty():
 		var mw := MeshInstance3D.new()
-		mw.mesh = e[0]
-		mw.material_override = wm
+		mw.mesh = RrWorld.merged(data["water"])
+		mw.material_override = _water_material()
 		mw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_static_root.add_child(mw)
 	var protos: Dictionary = {}
@@ -497,11 +500,14 @@ func _build_static() -> void:
 			fm.mesh = protos[card]
 			fm.instance_count = mm.instance_count
 			fm.buffer = buf
+			if model in INSET_CARDS:
+				fm.buffer = RrWorld.inset_buffer(buf, colored, INSET_CARDS[model])
+				_split_near(mmi, kind, colored)
 			var fmi := MultiMeshInstance3D.new()
 			fmi.multimesh = fm
 			fmi.material_override = _prop_material(kind, card, fm.mesh)
 			fmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			fmi.visibility_range_begin = float(lod[1])
+			fmi.visibility_range_begin = 0.0 if model in INSET_CARDS else float(lod[1])
 			_static_root.add_child(fmi)
 			_veg.append(["card_lod_" + model, fmi])
 		if model == "world6/sodium_lamp":
@@ -509,6 +515,61 @@ func _build_static() -> void:
 				var lx: Transform3D = _static_root.transform * mm.get_instance_transform(i)
 				_lamp_heads.append(lx.origin + Vector3.UP * 11.0)
 	world_ms = Time.get_ticks_msec() - t0
+
+
+## The near MultiMesh of a lod_ kind cut into NEAR_CELL_M cells, so only
+## the containers really near the camera draw their full mesh (a 150 m chunk
+## held up to 100 of them, QA 10-07).
+func _split_near(mmi: MultiMeshInstance3D, kind: String, colored: bool) -> void:
+	var mm: MultiMesh = mmi.multimesh
+	var stride: int = 16 if colored else 12
+	var src: PackedFloat32Array = mm.buffer
+	var cells: Dictionary = {}
+	for i: int in mm.instance_count:
+		var o: int = i * stride
+		var key := Vector2i(floori(src[o + 3] / NEAR_CELL_M), floori(src[o + 11] / NEAR_CELL_M))
+		var cell: PackedFloat32Array = cells.get(key, PackedFloat32Array())
+		cell.append_array(src.slice(o, o + stride))
+		cells[key] = cell  # packed arrays are values: store the grown copy
+	var first: bool = true
+	for key: Vector2i in cells:
+		var b: PackedFloat32Array = cells[key]
+		var target: MultiMeshInstance3D = mmi
+		if not first:
+			target = mmi.duplicate() as MultiMeshInstance3D
+			target.multimesh = MultiMesh.new()
+			target.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+			target.multimesh.use_colors = colored
+			target.multimesh.mesh = mm.mesh
+			_static_root.add_child(target)
+			_veg.append([kind, target])
+		else:
+			mm.instance_count = 0
+		target.multimesh.instance_count = b.size() / stride
+		target.multimesh.buffer = b
+		first = false
+
+
+## The same instances with each basis scaled per axis (an inset card that
+## hides inside the near mesh while both draw).
+static func inset_buffer(buf: PackedFloat32Array, colored: bool, k: Vector3) -> PackedFloat32Array:
+	var out: PackedFloat32Array = buf.duplicate()
+	var stride: int = 16 if colored else 12
+	for o: int in range(0, out.size(), stride):
+		for r: int in 3:
+			out[o + r * 4] *= k.x
+			out[o + r * 4 + 1] *= k.y
+			out[o + r * 4 + 2] *= k.z
+	return out
+
+
+## One mesh from the first surfaces of several [mesh, ...] entries.
+static func merged(entries: Array) -> Mesh:
+	var st := SurfaceTool.new()
+	st.create_from(entries[0][0], 0)
+	for i: int in range(1, entries.size()):
+		st.append_from(entries[i][0], 0, Transform3D.IDENTITY)
+	return st.commit()
 
 
 ## Model name of a prop kind (prefixes: st_ streamer, near_ / far_ trees,
@@ -909,6 +970,8 @@ func apply_features(f: Dictionary) -> void:
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 	var normals: bool = f.get("normals", false)
 	RrMats.set_quality(normals)
+	# Lav: meshes with LODs (ground, rocks, landmarks) drop detail sooner.
+	vp.mesh_lod_threshold = 1.0 if normals else RrBalance.LAV_MESH_LOD_PX
 	for m: ShaderMaterial in [_terrain_mat, _lane_mat, _pad_mat]:
 		m.set_shader_parameter("use_normals", normals)
 	# DESIGN 10a / 11: world-aligned triplanar rock walls (Høy only; W1 keeps
@@ -927,11 +990,15 @@ func apply_features(f: Dictionary) -> void:
 		elif kind.begins_with("card_lod_"):
 			var lod: Array = LODS.get(model, ["", 60.0])
 			mmi.visibility_range_begin = float(lod[1]) * (1.0 if far else 0.67)
+			if model in INSET_CARDS:
+				mmi.visibility_range_begin = 0.0
 			end = float(CARD_END.get(model, [300.0, 200.0])[0 if far else 1])
 		elif kind.begins_with("lod_"):
 			var lod2: Array = LODS.get(model, ["", 60.0])
 			end = float(lod2[1]) * (1.0 if far else 0.67) + 4.0
 			mmi.visibility_range_end_margin = 4.0
+			if model in INSET_CARDS:
+				mmi.visible = far  # Lav: the textured boxes only (DESIGN 12a)
 		elif VIS.has(model) and not kind.begins_with("st_"):
 			end = float(VIS[model][0 if far else 1])
 			if model == "world5/plant_calathea":

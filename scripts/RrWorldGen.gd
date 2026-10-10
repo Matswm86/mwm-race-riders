@@ -13,9 +13,9 @@ extends RefCounted
 
 const SAMPLE_STEP: float = 2.0
 const ROW_STEP: float = 3.0
-const STRIP_CHUNK: float = 200.0  # draw budget: fewer, longer ground chunks
+const STRIP_CHUNK: float = 400.0  # draw budget: fewer, longer ground chunks (QA 10-07)
 const FAR_STEP: float = 16.0  # APK size: coarser far grid under the fog
-const FAR_CHUNK: float = 600.0
+const FAR_CHUNK: float = 1500.0  # QA 10-07: 6-7 far cells in view cost a draw each
 const FAR_PAD: float = 420.0
 ## Lateral offsets past the track edge for the strip, per world (m).
 const OUT_W1: Array[float] = [0.25, 0.7, 1.3, 2.1, 3.2, 4.6, 6.5, 9.0, 12.0, 16.0, 21.0, 27.0, 34.0]
