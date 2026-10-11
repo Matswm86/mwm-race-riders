@@ -1,10 +1,36 @@
 # MWM Race Riders
 
-**[⬇ Download the APK (Android)](https://github.com/Matswm86/mwm-race-riders/releases/download/latest/mwm-race-riders.apk)**
+A fast, realistic downhill racer for Android, made for children (ages 4-7 on "Lett", 8+ on "Vanlig"). Hold the left or right side of the screen to steer a mountain bike, and later a hoverboard, against five rivals: speed pads, jumps with automatic tricks, gates that swap your vehicle, and a finish in 41-51 seconds at 108 km/h cruise (up to 173 km/h on boost). Steer into a rival's side to knock it off its bike; rivals can only nudge you, you never fall, and everyone finishes. No ads, no tracking, works offline, no Android permissions.
 
 <p align="center"><img src="docs/screenshots/17_w3_glacier.jpg" alt="World 3 mid-race: rider 7 chases rivals down a groomed glacier piste between red course flags and blue seracs, snow peaks ahead" width="360"> <img src="docs/screenshots/24_w6_midrace.jpg" alt="World 6 mid-race: the racers ride a wet quay at night under sodium lamps, container stacks on the right, a lit ferry across the harbour" width="360"></p>
 
-A fast, realistic downhill racer for Android, made for children (ages 4-7 on "Lett", 8+ on "Vanlig"). Hold the left or right side of the screen to steer a mountain bike, and later a hoverboard, against five rivals: speed pads, jumps with automatic tricks, gates that swap your vehicle, and a finish in 44-51 seconds at 108 km/h cruise (up to 173 km/h on boost). Steer into a rival's side to knock it off its bike; rivals can only nudge you, you never fall, and everyone finishes. No ads, no tracking, works offline, no Android permissions.
+<p align="center"><em>Mid-race in world 3 (Glacier Run, left) and world 6 (Night Harbour, right), captured from the real Godot build.</em></p>
+
+## Download
+
+**[mwm-race-riders.apk (Android)](https://github.com/Matswm86/mwm-race-riders/releases/download/latest/mwm-race-riders.apk)**, or open the [latest release](https://github.com/Matswm86/mwm-race-riders/releases/tag/latest).
+
+1. Open the file on the phone or tablet and allow "Install unknown apps" for your browser if Android asks ("Install from this source" on some versions).
+2. If an older build will not update (signature mismatch), uninstall it first.
+
+The APK runs on 64-bit phones and 32-bit tablets (arm64-v8a and armeabi-v7a). It is a release build signed with a CI-made keystore, for sideloading only, not a store build.
+
+## What it does
+
+- Race a mountain bike, and after your first finish a hoverboard, against five rivals in 96 races: 8 tracks and their 8 Pro variants in each of six worlds.
+- Steer by holding the left or right half of the screen. Speed pads, jumps with automatic tricks and vehicle-swap gates are on the track; on "Lett" the game boosts for you and helps you hold the line.
+- Steer into a rival's side to knock it off its bike. Nothing ever makes you fall, and everyone finishes.
+- Climb six offline leagues from Bronze to Champion in seasons of five races against 11 named rivals per league, with paint sets, parts and trophies as rewards.
+- Ride any track or Pro race on its own in free ride, against your own ghost and the track's board of best times.
+- Change difficulty, sound, music, ghost, motion and graphics in settings. No ads, no tracking, no network, no permissions.
+
+## How it works
+
+The game is a Godot 4.6 project in GDScript, drawn with the `mobile` renderer in portrait 1080x1920. The race rules (riders, speed pads, jumps, hindrances, rival AI) run in a simulation that does not need a screen, so the test script can play all 96 races headless, while a 3D scene with scanned PBR textures, HDRI skies and per-track baked landscapes draws them. Tracks are JSON files that a Python tool lays out offline from a kit of 15 pieces per world, so the game only loads them. The leagues, rivals, medals, ghosts and best times are computed and saved on the device, which is why it needs no network. GitHub Actions builds the Android APK on every push to `main`.
+
+## Status
+
+Playable: six worlds, 96 races and six leagues are built and covered by the race test. The APK is a rolling build of `main` (app version 0.1.0) for sideloading, not a store build.
 
 ## Levels: 96 races in six worlds
 
@@ -17,7 +43,7 @@ Each world has 8 tracks, and each track has a Pro variant: 48 tracks and 48 Pro 
 - **World 5 "Regnskogen / Rainforest"**: a wet mud trail under giant trees, rain and mist, logs to hop, branch piles, a split path (a narrow rope bridge or a wide river ford with more pads) and the jump off a waterfall into its pool.
 - **World 6 "Nattehavna / Night Harbour"**: a wet quay at night under sodium lamps, container canyons, traffic cones, rolling cable spools, wet steel plates that slide, air rings over the jumps for extra speed, and the crane jump off a container stack over the water.
 
-Track 1 of worlds 1 and 2 is the hand-made course; every other track is built from its world's kit of 15 pieces, each with its own order of bends, jumps, hindrances and set pieces and its own scenery, and a little longer than the one before (an idle child finishes every track in 44-51 seconds). Hindrances only slow you or nudge you; nothing makes you fall. Pro variants are the same track mirrored, at sunset, with two extra hindrances and slightly faster rivals. Every track has three medal times (gold, silver, bronze) and keeps your best run as a ghost.
+Track 1 of worlds 1 and 2 is the hand-made course; every other track is built from its world's kit of 15 pieces, each with its own order of bends, jumps, hindrances and set pieces and its own scenery, and a little longer than the one before (an idle child finishes every track in 41-51 seconds). Hindrances only slow you or nudge you; nothing makes you fall. Pro variants are the same track mirrored, at sunset, with two extra hindrances and slightly faster rivals. Every track has three medal times (gold, silver, bronze) and keeps your best run as a ghost.
 
 | Pine Run: tunnel | Red Canyon: swap gate | Glacier: ice cave | Ash Mountain: lava rail | Rainforest: split path | Night Harbour: crane jump |
 |---|---|---|---|---|---|
@@ -39,14 +65,6 @@ The map disc opens free ride: any track or Pro race on its own, no points, with 
 
 All screenshots come from the real Godot build (screenshot bot, `tests/capture.tscn`). Rules and numbers: `docs/GDD.md` (section 17 for tracks and leagues). Look: `docs/DESIGN.md`.
 
-## Install on a phone or tablet
-
-1. On the device, tap [mwm-race-riders.apk](https://github.com/Matswm86/mwm-race-riders/releases/download/latest/mwm-race-riders.apk) (or open the [latest release](https://github.com/Matswm86/mwm-race-riders/releases/tag/latest)).
-2. Open the file and allow "Install from this source" if Android asks.
-3. If an older build will not update (signature mismatch), uninstall it first.
-
-The APK runs on 64-bit phones and 32-bit tablets (arm64-v8a and armeabi-v7a). It is debug-signed, for sideloading only.
-
 ## How to play
 
 - Hold the left half of the screen to steer left, the right half to steer right. The newest finger wins.
@@ -54,7 +72,7 @@ The APK runs on 64-bit phones and 32-bit tablets (arm64-v8a and armeabi-v7a). It
 - Ride over the amber chevron pads for speed; three in a row go faster each time. In the night harbour, fly through the amber rings over the jumps.
 - Steer into the side of a rival riding next to you and it tumbles off its bike, then gets up and rides on. Mud, sand, snow, ash and the ford slow you a little, ice and wet steel make you slide, hay, branches and cones burst away, rolling things push you aside, logs and crust ridges give a little hop; nothing makes you fall.
 - Tap the round lightning disc when it is full for a boost. On "Lett" it boosts by itself, and the rider follows a helper line when you let go.
-- After your first finish, the gates turn your bike into a hoverboard and back. The card's biggest disc opens the league table; its big disc starts the next round. When you race a track again, your best run there rides along as a see-through ghost that fades away when it gets close to you.
+- After your first finish, the gates turn your bike into a hoverboard and back. On the result card the biggest disc starts the next race; the small discs at the sides open the league table and replay the same track. When you race a track again, your best run there rides along as a see-through ghost that fades away when it gets close to you.
 - Gear (top right): tap twice to open settings (difficulty, Nedrykk, sound, music, ghost, less motion, graphics Høy/Lav). Three-finger tap shows the performance readout (fps, draw calls, memory).
 
 ## Graphics
